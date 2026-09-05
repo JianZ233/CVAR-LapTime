@@ -11,6 +11,8 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "relay": "node scripts/orbits-relay.mjs",
     "simulate": "node scripts/simulate-feed.mjs",
+    "preflight": "node scripts/preflight.mjs",
+    "record": "node scripts/record-feed.mjs",
     "test": "node --test scripts/*.test.mjs",
     "lint": "oxlint",
     "format": "oxfmt"

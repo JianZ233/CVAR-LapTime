@@ -7,9 +7,9 @@ const port = Number(process.env.ORBITS_PORT || 50000);
 const ingestUrl = process.env.CVAR_INGEST_URL;
 const ingestKey = process.env.CVAR_INGEST_KEY;
 const state = createTimingState({
-  eventName: process.env.CVAR_EVENT_NAME || 'CVAR Track Weekend',
+  eventName: process.env.CVAR_EVENT_NAME || 'Canyon Classic at ECR',
   trackName: process.env.CVAR_TRACK_NAME || 'Eagles Canyon Raceway',
-  trackLength: process.env.CVAR_TRACK_LENGTH || '2.7 mi · 16 turns',
+  trackLength: process.env.CVAR_TRACK_LENGTH || '2.7 mi · 15 turns',
   sessionMode: process.env.CVAR_SESSION_MODE || 'auto',
 });
 
@@ -88,4 +88,12 @@ async function publish() {
   }
 }
 
-connect();
+async function checkCloud() {
+  const url = new URL(ingestUrl);
+  url.searchParams.set('check', '1');
+  const response = await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${ingestKey}` } });
+  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  console.log('Vercel ingest and Redis are ready.');
+}
+
+void checkCloud().catch((error) => console.error(`Cloud preflight failed: ${error.message}`)).finally(connect);

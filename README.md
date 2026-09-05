@@ -1,6 +1,6 @@
 # CVAR Live Timing
 
-A mobile-friendly live timing board for Corinthian Vintage Auto Racing at Eagles Canyon Raceway. It shows session status, overall and class standings, laps, last lap, best lap, and gap to the leader.
+A mobile-friendly live timing board for the Corinthian Vintage Auto Racing **Canyon Classic at ECR, September 11–13, 2026**. It shows session status, overall and class standings, laps, last lap, best lap, gap to the leader, and the full three-day event schedule.
 
 The site starts in demo mode. Live timing appears automatically when the control-room relay is connected.
 
@@ -66,7 +66,8 @@ $env:ORBITS_HOST="127.0.0.1"
 $env:ORBITS_PORT="50000"
 $env:CVAR_INGEST_URL="https://YOUR-PROJECT.vercel.app/api/ingest"
 $env:CVAR_INGEST_KEY="THE-SAME-VALUE-AS-CVAR_INGEST_SECRET"
-$env:CVAR_EVENT_NAME="CVAR at Eagles Canyon"
+$env:CVAR_EVENT_NAME="Canyon Classic at ECR"
+$env:CVAR_TRACK_LENGTH="2.7 mi · 15 turns"
 $env:CVAR_SESSION_MODE="auto"
 npm run relay
 ```
@@ -81,6 +82,24 @@ Published 18 cars · Group 7 Race · GREEN
 ```
 
 If the relay connects after Orbits has already been running, press **F2** in Orbits to refresh the scoreboard feed.
+
+## Before meeting the timer
+
+Set the four connection variables from the previous section, then run:
+
+```bash
+npm run preflight
+```
+
+This checks the two links that matter: the local Orbits TCP feed and the Vercel/Redis ingest endpoint. Both should report `PASS`.
+
+During a short test session, capture the exact feed sent by CVAR's Orbits setup:
+
+```bash
+npm run record
+```
+
+Stop it with Ctrl+C. Recordings are saved under `recordings/`, which Git ignores because the files can include driver names and transponder identifiers. See the [meeting checklist](docs/MEETING-CHECKLIST.md) for the questions and acceptance test.
 
 ## Rehearse without the timing hardware
 

@@ -9,6 +9,16 @@ export async function POST(request: Request) {
   if (!expected || !safeEqual(supplied, expected)) return Response.json({ error: 'Unauthorized' }, { status: 401 });
   if (!redisIsConfigured()) return Response.json({ error: 'Live timing storage is not configured' }, { status: 503 });
 
+  if (new URL(request.url).searchParams.get('check') === '1') {
+    try {
+      await redisCommand(['PING']);
+      return Response.json({ ok: true, ingest: 'ready', storage: 'ready' }, { headers: { 'cache-control': 'no-store' } });
+    } catch (error) {
+      console.error('Live timing preflight failed', error);
+      return Response.json({ error: 'Live timing storage is unavailable' }, { status: 502 });
+    }
+  }
+
   const raw = await request.text();
   if (raw.length > 512_000) return Response.json({ error: 'Snapshot is too large' }, { status: 413 });
 

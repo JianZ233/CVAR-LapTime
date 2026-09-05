@@ -25,10 +25,10 @@ export type TimingSnapshot = {
 };
 
 export const demoSnapshot: TimingSnapshot = {
-  eventName: 'CVAR Track Weekend',
+  eventName: 'Canyon Classic at ECR',
   trackName: 'Eagles Canyon Raceway',
-  trackLength: '2.7 mi · 16 turns',
-  runName: 'Group 2 / 3 / 7 · Practice 2',
+  trackLength: '2.7 mi · 15 turns',
+  runName: 'Groups 2 & 7 · Test & Tune',
   sessionMode: 'practice',
   flag: 'GREEN',
   lapsToGo: null,

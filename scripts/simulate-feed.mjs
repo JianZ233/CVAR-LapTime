@@ -10,10 +10,10 @@ const cars = [
 const server = net.createServer((socket) => {
   console.log('Relay connected to the simulated Orbits feed.');
   socket.write('$I,"09:00:00.000","05 sep 26"\r\n');
-  socket.write('$B,1,"Group 2 / 7 Practice"\r\n');
+  socket.write('$B,1,"Groups 2 & 7 Test & Tune"\r\n');
   socket.write('$C,2,"Group 2"\r\n$C,7,"Group 7"\r\n');
   socket.write('$E,"TRACKNAME","Eagles Canyon Raceway"\r\n');
-  socket.write('$E,"TRACKLENGTH","2.7 mi · 16 turns"\r\n');
+  socket.write('$E,"TRACKLENGTH","2.7 mi · 15 turns"\r\n');
   cars.forEach((car) => socket.write(`$A,"${car.reg}","${car.number}",${10000 + Number(car.number)},"${car.first}","${car.last}","${car.model}",${car.classNumber}\r\n`));
 
   let lap = 0;
