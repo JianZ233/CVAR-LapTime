@@ -190,7 +190,7 @@ function useLiveTiming() {
     let cancelled = false;
     async function refresh() {
       try {
-        const response = await fetch('/api/live', { cache: 'no-store' });
+        const response = await fetch('/api/live');
         if (!response.ok) throw new Error(`Live endpoint returned ${response.status}`);
         const body = await response.json() as { snapshot?: unknown };
         if (!isTimingSnapshot(body.snapshot)) throw new Error('Invalid timing snapshot');

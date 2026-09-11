@@ -1,5 +1,17 @@
-const redisUrl = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
-const redisToken = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+const redisUrl = firstConfigured(
+  process.env.CVAR_REDIS_KV_REST_API_URL,
+  process.env.KV_REST_API_URL,
+  process.env.UPSTASH_REDIS_REST_URL,
+);
+const redisToken = firstConfigured(
+  process.env.CVAR_REDIS_KV_REST_API_TOKEN,
+  process.env.KV_REST_API_TOKEN,
+  process.env.UPSTASH_REDIS_REST_TOKEN,
+);
+
+function firstConfigured(...values: Array<string | undefined>) {
+  return values.find((value) => Boolean(value?.trim()));
+}
 
 export function redisIsConfigured() {
   return Boolean(redisUrl && redisToken);

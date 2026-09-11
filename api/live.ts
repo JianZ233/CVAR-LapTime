@@ -11,7 +11,7 @@ async function readSnapshot() {
   try {
     const stored = await redisCommand(['GET', 'cvar:live']);
     if (typeof stored !== 'string') return Response.json({ error: 'No live session is available' }, { status: 404, headers: noStoreHeaders });
-    return Response.json({ snapshot: JSON.parse(stored) }, { headers: noStoreHeaders });
+    return Response.json({ snapshot: JSON.parse(stored) }, { headers: liveHeaders });
   } catch (error) {
     console.error('Unable to read live timing', error);
     return Response.json({ error: 'Unable to read live timing' }, { status: 502, headers: noStoreHeaders });
@@ -19,3 +19,7 @@ async function readSnapshot() {
 }
 
 const noStoreHeaders = { 'cache-control': 'no-store, max-age=0' };
+const liveHeaders = {
+  'cache-control': 'public, max-age=0, must-revalidate',
+  'vercel-cdn-cache-control': 'public, s-maxage=1, stale-while-revalidate=1',
+};

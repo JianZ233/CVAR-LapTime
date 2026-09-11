@@ -34,7 +34,7 @@ The RMonitor feed includes competitor (`$A`/`$COMP`), class (`$C`), race order (
 ## Deploy the website to Vercel
 
 1. Import `JianZ233/CVAR-LapTime` in Vercel.
-2. In Vercel Marketplace, add an **Upstash Redis** database to the project. Vercel supplies `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
+2. In Vercel Marketplace, add an **Upstash Redis** database to the project. Vercel supplies `KV_REST_API_URL` and `KV_REST_API_TOKEN`. A database connected with the `CVAR_REDIS` prefix supplies `CVAR_REDIS_KV_REST_API_URL` and `CVAR_REDIS_KV_REST_API_TOKEN`; the app supports both forms.
 3. Add a Vercel environment variable named `CVAR_INGEST_SECRET`. Use a long random value, for example the output of `openssl rand -hex 32`.
 4. Deploy. The included `vercel.json` builds the static timing board from `dist/client`, and Vercel creates the functions in `api/`.
 5. Open `https://YOUR-PROJECT.vercel.app/api/live`. Before the relay is started, a `404` response is expected.
