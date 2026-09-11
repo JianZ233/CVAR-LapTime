@@ -490,6 +490,9 @@ function ResultsAdjustmentPanel({
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const activeSessionId = sessionId || sessions[0]?.id || '';
+  const activeSession = sessions.find(
+    (session) => session.id === activeSessionId,
+  );
 
   const loadAdjustments = useCallback(async () => {
     if (!activeSessionId) return;
@@ -645,7 +648,11 @@ function ResultsAdjustmentPanel({
               id="adjustment-session"
               className="h-10 w-full border-white/15 bg-black/20"
             >
-              <SelectValue />
+              <SelectValue>
+                {activeSession
+                  ? formatSessionName(activeSession.runName)
+                  : 'Choose a saved session'}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent align="end">
               {sessions.map((session) => (
@@ -773,7 +780,9 @@ function ResultsAdjustmentPanel({
                           }
                         >
                           <SelectTrigger className="h-9 w-full border-white/15 bg-black/20">
-                            <SelectValue />
+                            <SelectValue>
+                              {formatResultStatus(draft.status)}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="NONE">No status</SelectItem>
@@ -871,6 +880,12 @@ function adjustmentDraft(value?: Partial<ResultAdjustment>): AdjustmentDraft {
     status: value?.status || '',
     note: value?.note || '',
   };
+}
+
+function formatResultStatus(status: ResultStatus) {
+  if (!status) return 'No status';
+  if (status === 'DQ') return 'Disqualified';
+  return status;
 }
 
 function ControlLogin({ onSignedIn }: { onSignedIn: () => void }) {
