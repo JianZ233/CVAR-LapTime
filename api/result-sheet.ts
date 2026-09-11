@@ -10,16 +10,30 @@ import {
 import { redisCommand, redisIsConfigured } from './_redis.js';
 
 type ResultCar = {
+  registrationKey: string;
+  registrationNumber: string;
   number: string;
   driver: string;
-  car: string;
   groupName: string;
   className: string;
   position: number;
   laps: number;
   bestLapNumber: number;
+  totalTime: string;
   bestLap: string;
   gap: string;
+};
+
+type LapPassing = {
+  registrationKey: string;
+  registrationNumber: string;
+  number: string;
+  driver: string;
+  lapNumber: number;
+  lapTime: string;
+  lapTimeMs: number | null;
+  totalTimeMs: number | null;
+  recordedAt: string;
 };
 
 type ResultSnapshot = {
@@ -36,6 +50,9 @@ type ResultSnapshot = {
   cars: ResultCar[];
 };
 
+type Fonts = { regular: PDFFont; bold: PDFFont; italic: PDFFont };
+type LapBlock = { car: ResultCar; laps: LapPassing[]; continued?: boolean };
+
 const EVENT_ID = 'canyon-classic-2026';
 const A4: [number, number] = [595.28, 841.89];
 const NAVY = rgb(0.027, 0.086, 0.125);
@@ -46,19 +63,19 @@ const PAPER = rgb(0.975, 0.97, 0.94);
 const INK = rgb(0.06, 0.1, 0.12);
 const MUTED = rgb(0.36, 0.43, 0.47);
 const LINE = rgb(0.78, 0.8, 0.79);
+const ROW_SHADE = rgb(0.93, 0.93, 0.9);
 
 export async function GET(request: Request) {
-  if (!redisIsConfigured()) {
+  if (!redisIsConfigured())
     return Response.json(
       { error: 'Timing storage is not configured' },
       { status: 503, headers: noStoreHeaders },
     );
-  }
 
   const url = new URL(request.url);
   const eventId = url.searchParams.get('event') || EVENT_ID;
-  const sessionId = url.searchParams.get('session');
-  if (!safeId(eventId) || (sessionId && !safeId(sessionId))) {
+  const requestedSessionId = url.searchParams.get('session');
+  if (!safeId(eventId) || (requestedSessionId && !safeId(requestedSessionId))) {
     return Response.json(
       { error: 'Invalid event or session identifier' },
       { status: 400, headers: noStoreHeaders },
@@ -66,11 +83,22 @@ export async function GET(request: Request) {
   }
 
   try {
-    const stored = await redisCommand([
-      'GET',
-      sessionId
-        ? `cvar:event:${eventId}:session:${sessionId}:latest`
-        : 'cvar:live',
+    const sessionId =
+      requestedSessionId || (await redisCommand(['GET', 'cvar:live-session']));
+    if (typeof sessionId !== 'string' || !safeId(sessionId)) {
+      return Response.json(
+        { error: 'Result sheet data is not available' },
+        { status: 404, headers: noStoreHeaders },
+      );
+    }
+
+    const sessionPrefix = `cvar:event:${eventId}:session:${sessionId}`;
+    const [stored, passingIdValues] = await Promise.all([
+      redisCommand([
+        'GET',
+        requestedSessionId ? `${sessionPrefix}:latest` : 'cvar:live',
+      ]),
+      redisCommand(['ZRANGE', `${sessionPrefix}:passing-order`, 0, -1]),
     ]);
     if (typeof stored !== 'string') {
       return Response.json(
@@ -78,23 +106,34 @@ export async function GET(request: Request) {
         { status: 404, headers: noStoreHeaders },
       );
     }
-
     const snapshot = parseSnapshot(stored);
-    if (!snapshot) {
+    if (!snapshot)
       return Response.json(
         { error: 'Result sheet data is invalid' },
         { status: 502, headers: noStoreHeaders },
       );
-    }
 
-    const logo = await loadLogo(request.url);
-    const pdf = await createResultSheet(snapshot, logo);
+    const passingIds = Array.isArray(passingIdValues)
+      ? passingIdValues.map(String)
+      : [];
+    const passingValues = passingIds.length
+      ? await redisCommand([
+          'HMGET',
+          `${sessionPrefix}:passings`,
+          ...passingIds,
+        ])
+      : [];
+    const pdf = await createResultSheet(
+      snapshot,
+      parsePassings(passingValues),
+      await loadLogo(request.url),
+    );
     const filename = `${slugify(formatSessionName(snapshot.runName)) || 'cvar-session'}-results.pdf`;
-
     const body = pdf.buffer.slice(
       pdf.byteOffset,
       pdf.byteOffset + pdf.byteLength,
     ) as ArrayBuffer;
+
     return new Response(body, {
       headers: {
         'content-type': 'application/pdf',
@@ -113,65 +152,473 @@ export async function GET(request: Request) {
 
 export async function createResultSheet(
   snapshot: ResultSnapshot,
+  passings: LapPassing[],
   logoBytes: Uint8Array | null,
 ) {
   const document = await PDFDocument.create();
   document.setTitle(`${formatSessionName(snapshot.runName)} results`);
   document.setAuthor('Corinthian Vintage Auto Racing');
-  document.setSubject('Unofficial session result sheet');
+  document.setSubject('Unofficial session result packet');
   document.setCreator('CVAR Live Timing');
-
-  const regular = await document.embedFont(StandardFonts.Helvetica);
-  const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  const italic = await document.embedFont(StandardFonts.HelveticaOblique);
+  const fonts: Fonts = {
+    regular: await document.embedFont(StandardFonts.Helvetica),
+    bold: await document.embedFont(StandardFonts.HelveticaBold),
+    italic: await document.embedFont(StandardFonts.HelveticaOblique),
+  };
   const logo = logoBytes
     ? await document.embedPng(logoBytes).catch(() => null)
     : null;
   const cars = rankCars(snapshot.cars);
-  const rowsPerPage = 28;
-  const pageCount = Math.max(1, Math.ceil(cars.length / rowsPerPage));
+  const classificationPages = chunk(cars, 34);
+  if (!classificationPages.length) classificationPages.push([]);
+  const lapPages = planLapBreakdownPages(cars, passings);
+  const chartPages = planLapChartPages(passings);
+  const totalPages =
+    classificationPages.length + lapPages.length + chartPages.length;
+  let pageNumber = 1;
 
-  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+  classificationPages.forEach((rows, index) => {
     const page = document.addPage(A4);
-    const rows = cars.slice(
-      pageIndex * rowsPerPage,
-      (pageIndex + 1) * rowsPerPage,
-    );
-    drawPage({
+    drawClassificationPage({
       page,
       snapshot,
       rows,
-      pageIndex,
-      pageCount,
-      regular,
-      bold,
-      italic,
+      startPosition: index * 34,
+      pageNumber,
+      totalPages,
+      fonts,
       logo,
     });
-  }
-
+    pageNumber += 1;
+  });
+  lapPages.forEach((columns) => {
+    const page = document.addPage(A4);
+    drawLapBreakdownPage({
+      page,
+      snapshot,
+      columns,
+      pageNumber,
+      totalPages,
+      fonts,
+      logo,
+    });
+    pageNumber += 1;
+  });
+  chartPages.forEach((lapNumbers) => {
+    const page = document.addPage(A4);
+    drawLapChartPage({
+      page,
+      snapshot,
+      cars,
+      passings,
+      lapNumbers,
+      pageNumber,
+      totalPages,
+      fonts,
+      logo,
+    });
+    pageNumber += 1;
+  });
   return document.save();
 }
 
-function drawPage({
+function drawClassificationPage({
   page,
   snapshot,
   rows,
-  pageIndex,
-  pageCount,
-  regular,
-  bold,
-  italic,
+  startPosition,
+  pageNumber,
+  totalPages,
+  fonts,
   logo,
 }: {
   page: PDFPage;
   snapshot: ResultSnapshot;
   rows: ResultCar[];
-  pageIndex: number;
-  pageCount: number;
-  regular: PDFFont;
-  bold: PDFFont;
-  italic: PDFFont;
+  startPosition: number;
+  pageNumber: number;
+  totalPages: number;
+  fonts: Fonts;
+  logo: PDFImage | null;
+}) {
+  const { width } = page.getSize();
+  const contentTop = drawDocumentHeader({
+    page,
+    snapshot,
+    title: 'RESULT SHEET',
+    label: 'SORTED ON BEST LAP',
+    fonts,
+    logo,
+  });
+  const columns = [
+    { label: 'Pos', x: 34, width: 24, align: 'right' as const },
+    { label: 'No.', x: 62, width: 28, align: 'left' as const },
+    { label: 'Driver', x: 94, width: 96, align: 'left' as const },
+    { label: 'Class', x: 194, width: 48, align: 'left' as const },
+    { label: 'Group', x: 246, width: 62, align: 'left' as const },
+    { label: 'Laps', x: 312, width: 28, align: 'right' as const },
+    { label: 'Total time', x: 344, width: 68, align: 'right' as const },
+    { label: 'Best Tm', x: 416, width: 58, align: 'right' as const },
+    { label: 'In Lap', x: 478, width: 35, align: 'right' as const },
+    { label: 'Gap', x: 517, width: 50, align: 'right' as const },
+  ];
+  const tableTop = contentTop - 17;
+  page.drawRectangle({
+    x: 28,
+    y: tableTop - 2,
+    width: width - 56,
+    height: 18,
+    color: BLUE,
+  });
+  columns.forEach((column) =>
+    drawCell(
+      page,
+      column.label,
+      column.x,
+      tableTop + 4,
+      column.width,
+      7,
+      fonts.bold,
+      rgb(1, 1, 1),
+      column.align,
+    ),
+  );
+
+  const rowHeight = 14.8;
+  rows.forEach((car, index) => {
+    const rowY = tableTop - 17 - index * rowHeight;
+    if (index % 2 === 1)
+      page.drawRectangle({
+        x: 28,
+        y: rowY - 2.5,
+        width: width - 56,
+        height: rowHeight,
+        color: ROW_SHADE,
+      });
+    const position = startPosition + index + 1;
+    const cells = [
+      String(position),
+      car.number || '-',
+      car.driver || `Car ${car.number || position}`,
+      car.className || '-',
+      car.groupName || '-',
+      String(car.laps || 0),
+      car.totalTime || '-',
+      car.bestLap || '-',
+      car.bestLapNumber ? String(car.bestLapNumber) : '-',
+      position === 1 ? '-' : car.gap || '-',
+    ];
+    columns.forEach((column, cellIndex) =>
+      drawCell(
+        page,
+        cells[cellIndex],
+        column.x,
+        rowY + 1.5,
+        column.width,
+        6.9,
+        cellIndex === 7 ? fonts.bold : fonts.regular,
+        cellIndex === 7 && car.bestLap ? NAVY : INK,
+        column.align,
+      ),
+    );
+    page.drawLine({
+      start: { x: 28, y: rowY - 2.5 },
+      end: { x: width - 28, y: rowY - 2.5 },
+      thickness: 0.3,
+      color: LINE,
+    });
+  });
+  if (!rows.length)
+    page.drawText('No timed cars were recorded for this session.', {
+      x: 38,
+      y: tableTop - 50,
+      size: 10,
+      font: fonts.italic,
+      color: MUTED,
+    });
+  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
+}
+
+function drawLapBreakdownPage({
+  page,
+  snapshot,
+  columns,
+  pageNumber,
+  totalPages,
+  fonts,
+  logo,
+}: {
+  page: PDFPage;
+  snapshot: ResultSnapshot;
+  columns: LapBlock[][];
+  pageNumber: number;
+  totalPages: number;
+  fonts: Fonts;
+  logo: PDFImage | null;
+}) {
+  const contentTop = drawDocumentHeader({
+    page,
+    snapshot,
+    title: 'LAP BREAKDOWN',
+    label: 'INDIVIDUAL LAP TIMES',
+    fonts,
+    logo,
+  });
+  const columnWidth = 171;
+  const columnXs = [31, 211, 391];
+  const lineHeight = 10.5;
+  columnXs.slice(1).forEach((x) =>
+    page.drawLine({
+      start: { x: x - 8, y: contentTop + 1 },
+      end: { x: x - 8, y: 103 },
+      thickness: 0.45,
+      color: LINE,
+    }),
+  );
+
+  columns.forEach((blocks, columnIndex) => {
+    const x = columnXs[columnIndex];
+    let y = contentTop - 11;
+    page.drawText('Lap', { x, y, size: 6.2, font: fonts.bold, color: MUTED });
+    page.drawText('Lap Tm', {
+      x: x + 30,
+      y,
+      size: 6.2,
+      font: fonts.bold,
+      color: MUTED,
+    });
+    page.drawText('Diff', {
+      x: x + 82,
+      y,
+      size: 6.2,
+      font: fonts.bold,
+      color: MUTED,
+    });
+    page.drawText('Time of Day', {
+      x: x + 115,
+      y,
+      size: 6.2,
+      font: fonts.bold,
+      color: MUTED,
+    });
+    y -= 15;
+    blocks.forEach((block) => {
+      const title = `(${block.car.number || '-'}) ${block.car.driver || 'Unknown driver'}${block.continued ? ' (cont.)' : ''}`;
+      page.drawText(fitText(safeText(title), fonts.bold, 6.6, columnWidth), {
+        x,
+        y,
+        size: 6.6,
+        font: fonts.bold,
+        color: NAVY,
+      });
+      page.drawLine({
+        start: { x, y: y - 2.5 },
+        end: { x: x + columnWidth - 4, y: y - 2.5 },
+        thickness: 0.7,
+        color: NAVY,
+      });
+      y -= lineHeight;
+      const best = Math.min(
+        ...block.laps
+          .map((lap) => lap.lapTimeMs ?? lapTimeToMilliseconds(lap.lapTime))
+          .filter(Number.isFinite),
+      );
+      block.laps.forEach((lap) => {
+        const lapMs = lap.lapTimeMs ?? lapTimeToMilliseconds(lap.lapTime);
+        const isBest = Number.isFinite(best) && lapMs === best;
+        const diff =
+          Number.isFinite(best) && Number.isFinite(lapMs) && lapMs > best
+            ? `+${((lapMs - best) / 1000).toFixed(3)}`
+            : '';
+        drawRight(
+          page,
+          String(lap.lapNumber || '-'),
+          x + 22,
+          y,
+          6.25,
+          fonts.regular,
+          INK,
+        );
+        drawRight(
+          page,
+          lap.lapTime || '-',
+          x + 76,
+          y,
+          6.25,
+          isBest ? fonts.bold : fonts.regular,
+          INK,
+        );
+        drawRight(page, diff, x + 110, y, 6.1, fonts.regular, MUTED);
+        drawRight(
+          page,
+          formatTimeOfDay(lap.recordedAt),
+          x + columnWidth - 4,
+          y,
+          6.1,
+          fonts.regular,
+          INK,
+        );
+        y -= lineHeight;
+      });
+      y -= 5;
+    });
+  });
+  if (columns.every((column) => column.length === 0))
+    page.drawText('No lap passings were recorded for this session.', {
+      x: 38,
+      y: contentTop - 55,
+      size: 10,
+      font: fonts.italic,
+      color: MUTED,
+    });
+  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
+}
+
+function drawLapChartPage({
+  page,
+  snapshot,
+  cars,
+  passings,
+  lapNumbers,
+  pageNumber,
+  totalPages,
+  fonts,
+  logo,
+}: {
+  page: PDFPage;
+  snapshot: ResultSnapshot;
+  cars: ResultCar[];
+  passings: LapPassing[];
+  lapNumbers: number[];
+  pageNumber: number;
+  totalPages: number;
+  fonts: Fonts;
+  logo: PDFImage | null;
+}) {
+  const contentTop = drawDocumentHeader({
+    page,
+    snapshot,
+    title: 'LAP CHART',
+    label: 'POSITION BY LAP',
+    fonts,
+    logo,
+  });
+  const { width } = page.getSize();
+  const firstOrder = initialPassingOrder(cars, passings);
+  const chartStart = 218;
+  const includeGrid = lapNumbers[0] === 1;
+  const chartColumns = includeGrid ? [0, ...lapNumbers] : lapNumbers;
+  const cellWidth = Math.min(
+    31,
+    (width - 32 - chartStart) / Math.max(1, chartColumns.length),
+  );
+  const rowCount = Math.max(cars.length, firstOrder.length);
+  const rowHeight = Math.min(13.5, 435 / Math.max(1, rowCount));
+  const fontSize = Math.max(5.5, Math.min(6.8, rowHeight - 4.8));
+  page.drawText('Competitors', {
+    x: 34,
+    y: contentTop - 11,
+    size: 6.5,
+    font: fonts.bold,
+    color: MUTED,
+  });
+  page.drawText('Pos', {
+    x: 190,
+    y: contentTop - 11,
+    size: 6.5,
+    font: fonts.bold,
+    color: MUTED,
+  });
+  page.drawText('Laps', {
+    x: chartStart,
+    y: contentTop - 11,
+    size: 6.5,
+    font: fonts.bold,
+    color: MUTED,
+  });
+  const headerY = contentTop - 28;
+  chartColumns.forEach((lap, index) =>
+    drawCell(
+      page,
+      String(lap),
+      chartStart + index * cellWidth,
+      headerY,
+      cellWidth - 2,
+      6.3,
+      fonts.bold,
+      NAVY,
+      'center',
+    ),
+  );
+  const orderByLap = new Map(
+    lapNumbers.map((lap) => [lap, orderAtLap(passings, lap)]),
+  );
+  const rowYStart = headerY - 19;
+  for (let row = 0; row < rowCount; row += 1) {
+    const y = rowYStart - row * rowHeight;
+    if (row % 2 === 1)
+      page.drawRectangle({
+        x: 28,
+        y: y - 3,
+        width: width - 56,
+        height: rowHeight,
+        color: ROW_SHADE,
+      });
+    const entrant = firstOrder[row] || cars[row];
+    const entrantLabel = entrant
+      ? `${entrant.driver || 'Unknown'} (${entrant.number || '-'})`
+      : '-';
+    page.drawText(
+      fitText(safeText(entrantLabel), fonts.regular, fontSize, 150),
+      { x: 34, y, size: fontSize, font: fonts.regular, color: INK },
+    );
+    drawRight(page, String(row + 1), 204, y, fontSize, fonts.bold, NAVY);
+    chartColumns.forEach((lap, index) => {
+      const orderedCar =
+        lap === 0 ? firstOrder[row] : orderByLap.get(lap)?.[row];
+      drawCell(
+        page,
+        orderedCar?.number || '',
+        chartStart + index * cellWidth,
+        y,
+        cellWidth - 2,
+        fontSize,
+        fonts.bold,
+        INK,
+        'center',
+      );
+    });
+    page.drawLine({
+      start: { x: 28, y: y - 3 },
+      end: { x: width - 28, y: y - 3 },
+      thickness: 0.25,
+      color: LINE,
+    });
+  }
+  if (!passings.length)
+    page.drawText('No lap positions were recorded for this session.', {
+      x: 38,
+      y: contentTop - 55,
+      size: 10,
+      font: fonts.italic,
+      color: MUTED,
+    });
+  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
+}
+
+function drawDocumentHeader({
+  page,
+  snapshot,
+  title,
+  label,
+  fonts,
+  logo,
+}: {
+  page: PDFPage;
+  snapshot: ResultSnapshot;
+  title: string;
+  label: string;
+  fonts: Fonts;
   logo: PDFImage | null;
 }) {
   const { width, height } = page.getSize();
@@ -183,187 +630,96 @@ function drawPage({
     height: 12,
     color: YELLOW,
   });
-
   if (logo) {
-    const fitted = logo.scale(0.31);
+    const fitted = logo.scale(0.27);
     page.drawImage(logo, {
       x: 28,
-      y: height - 86,
+      y: height - 80,
       width: fitted.width,
       height: fitted.height,
     });
-  } else {
+  } else
     page.drawText('CVAR', {
       x: 30,
-      y: height - 61,
-      size: 24,
-      font: bold,
+      y: height - 58,
+      size: 22,
+      font: fonts.bold,
       color: NAVY,
     });
-  }
-
   drawRight(
     page,
     'OFFICIAL EVENT TIMING',
     width - 28,
-    height - 43,
+    height - 39,
     7,
-    bold,
+    fonts.bold,
     NAVY,
   );
-  drawRight(page, 'RESULT SHEET', width - 28, height - 62, 18, bold, NAVY);
-  drawRight(
-    page,
-    'SORTED ON BEST LAP',
-    width - 28,
-    height - 78,
-    7.5,
-    bold,
-    MUTED,
-  );
-
-  const headerY = height - 177;
+  drawRight(page, title, width - 28, height - 59, 17, fonts.bold, NAVY);
+  drawRight(page, label, width - 28, height - 74, 7.2, fonts.bold, MUTED);
+  const headerY = height - 169;
   page.drawRectangle({
     x: 28,
     y: headerY,
     width: width - 56,
-    height: 78,
+    height: 76,
     color: NAVY,
   });
   page.drawRectangle({
     x: 28,
     y: headerY,
     width: 5,
-    height: 78,
+    height: 76,
     color: YELLOW,
   });
   page.drawText(safeText(snapshot.eventName || 'Canyon Classic'), {
     x: 45,
-    y: headerY + 54,
+    y: headerY + 52,
     size: 8,
-    font: bold,
+    font: fonts.bold,
     color: SKY,
   });
-  page.drawText(fitText(formatSessionName(snapshot.runName), bold, 18, 320), {
-    x: 45,
-    y: headerY + 29,
-    size: 18,
-    font: bold,
-    color: rgb(1, 1, 1),
-  });
+  page.drawText(
+    fitText(formatSessionName(snapshot.runName), fonts.bold, 17, 330),
+    { x: 45, y: headerY + 29, size: 17, font: fonts.bold, color: rgb(1, 1, 1) },
+  );
   page.drawText(sessionDescription(snapshot), {
     x: 45,
     y: headerY + 12,
-    size: 7.5,
-    font: italic,
+    size: 7.4,
+    font: fonts.italic,
     color: rgb(0.78, 0.84, 0.87),
   });
   drawRight(
     page,
-    fitText(trackLine(snapshot), regular, 8.5, 180),
+    fitText(trackLine(snapshot), fonts.regular, 8.2, 178),
     width - 43,
-    headerY + 47,
-    8.5,
-    regular,
+    headerY + 46,
+    8.2,
+    fonts.regular,
     rgb(1, 1, 1),
   );
   drawRight(
     page,
     formatDate(snapshot.initializedAt || snapshot.updatedAt),
     width - 43,
-    headerY + 28,
-    8,
-    regular,
+    headerY + 27,
+    7.7,
+    fonts.regular,
     rgb(0.78, 0.84, 0.87),
   );
-  drawCheckers(page, width - 91, headerY + 7);
+  drawCheckers(page, width - 91, headerY + 6);
+  return headerY;
+}
 
-  const columns = [
-    { label: 'Pos', x: 34, width: 24, align: 'right' as const },
-    { label: 'No.', x: 63, width: 31, align: 'left' as const },
-    { label: 'Driver', x: 99, width: 98, align: 'left' as const },
-    { label: 'Class', x: 202, width: 47, align: 'left' as const },
-    { label: 'Vehicle', x: 254, width: 142, align: 'left' as const },
-    { label: 'Laps', x: 401, width: 28, align: 'right' as const },
-    { label: 'Best Tm', x: 434, width: 55, align: 'right' as const },
-    { label: 'In Lap', x: 494, width: 34, align: 'right' as const },
-    { label: 'Gap', x: 533, width: 34, align: 'right' as const },
-  ];
-  const tableTop = headerY - 17;
-  page.drawRectangle({
-    x: 28,
-    y: tableTop - 2,
-    width: width - 56,
-    height: 18,
-    color: BLUE,
-  });
-  for (const column of columns)
-    drawCell(
-      page,
-      column.label,
-      column.x,
-      tableTop + 4,
-      column.width,
-      7,
-      bold,
-      rgb(1, 1, 1),
-      column.align,
-    );
-
-  const rowHeight = 17;
-  rows.forEach((car, index) => {
-    const rowY = tableTop - 18 - index * rowHeight;
-    if (index % 2 === 1)
-      page.drawRectangle({
-        x: 28,
-        y: rowY - 3,
-        width: width - 56,
-        height: rowHeight,
-        color: rgb(0.93, 0.93, 0.9),
-      });
-    const position = pageIndex * 28 + index + 1;
-    const cells = [
-      String(position),
-      car.number || '—',
-      car.driver || `Car ${car.number || position}`,
-      car.className || car.groupName || '—',
-      car.car || '—',
-      String(car.laps || 0),
-      car.bestLap || '—',
-      car.bestLapNumber ? String(car.bestLapNumber) : '—',
-      position === 1 ? '—' : car.gap || '—',
-    ];
-    columns.forEach((column, cellIndex) => {
-      drawCell(
-        page,
-        cells[cellIndex],
-        column.x,
-        rowY + 2,
-        column.width,
-        7.2,
-        cellIndex === 6 ? bold : regular,
-        cellIndex === 6 && car.bestLap ? NAVY : INK,
-        column.align,
-      );
-    });
-    page.drawLine({
-      start: { x: 28, y: rowY - 3 },
-      end: { x: width - 28, y: rowY - 3 },
-      thickness: 0.35,
-      color: LINE,
-    });
-  });
-
-  if (!rows.length) {
-    page.drawText('No timed cars were recorded for this session.', {
-      x: 38,
-      y: tableTop - 50,
-      size: 10,
-      font: italic,
-      color: MUTED,
-    });
-  }
-
+function drawFooter(
+  page: PDFPage,
+  snapshot: ResultSnapshot,
+  pageNumber: number,
+  totalPages: number,
+  fonts: Fonts,
+) {
+  const { width } = page.getSize();
   const noteY = 64;
   page.drawLine({
     start: { x: 28, y: noteY + 22 },
@@ -375,30 +731,30 @@ function drawPage({
     x: 28,
     y: noteY + 5,
     size: 7.5,
-    font: bold,
+    font: fonts.bold,
     color: NAVY,
   });
   page.drawText('Results are final only after steward review.', {
     x: 126,
     y: noteY + 5,
     size: 7.5,
-    font: regular,
+    font: fonts.regular,
     color: MUTED,
   });
   drawRight(
     page,
-    `Page ${pageIndex + 1} of ${pageCount}`,
+    `Page ${pageNumber} of ${totalPages}`,
     width - 28,
     noteY + 5,
     7.5,
-    bold,
+    fonts.bold,
     NAVY,
   );
   page.drawText('Corinthian Vintage Auto Racing', {
     x: 28,
     y: 32,
     size: 7,
-    font: regular,
+    font: fonts.regular,
     color: MUTED,
   });
   drawRight(
@@ -407,15 +763,108 @@ function drawPage({
     width - 28,
     32,
     7,
-    regular,
+    fonts.regular,
     MUTED,
   );
 }
 
+function planLapBreakdownPages(cars: ResultCar[], passings: LapPassing[]) {
+  const passingsByCar = new Map<string, LapPassing[]>();
+  passings.forEach((passing) => {
+    const key = passing.registrationKey || passing.registrationNumber;
+    passingsByCar.set(key, [...(passingsByCar.get(key) || []), passing]);
+  });
+  const blocks: LapBlock[] = [];
+  cars.forEach((car) => {
+    const key = car.registrationKey || car.registrationNumber;
+    const laps = [...(passingsByCar.get(key) || [])].sort(
+      (left, right) =>
+        left.lapNumber - right.lapNumber ||
+        Date.parse(left.recordedAt) - Date.parse(right.recordedAt),
+    );
+    for (let index = 0; index < laps.length; index += 32)
+      blocks.push({
+        car,
+        laps: laps.slice(index, index + 32),
+        continued: index > 0,
+      });
+  });
+  if (!blocks.length) return [[[], [], []] as LapBlock[][]];
+  const pages: LapBlock[][][] = [];
+  let columns: LapBlock[][] = [[], [], []];
+  let columnIndex = 0;
+  let usedLines = 0;
+  blocks.forEach((block) => {
+    const neededLines = block.laps.length + 2;
+    if (usedLines && usedLines + neededLines > 43) {
+      columnIndex += 1;
+      usedLines = 0;
+    }
+    if (columnIndex === 3) {
+      pages.push(columns);
+      columns = [[], [], []];
+      columnIndex = 0;
+    }
+    columns[columnIndex].push(block);
+    usedLines += neededLines;
+  });
+  pages.push(columns);
+  return pages;
+}
+
+function planLapChartPages(passings: LapPassing[]) {
+  const maxLap = passings.reduce(
+    (maximum, passing) => Math.max(maximum, passing.lapNumber),
+    0,
+  );
+  return maxLap
+    ? chunk(
+        Array.from({ length: maxLap }, (_, index) => index + 1),
+        10,
+      )
+    : [[]];
+}
+
+function initialPassingOrder(cars: ResultCar[], passings: LapPassing[]) {
+  const firstByKey = new Map<string, LapPassing>();
+  passings.forEach((passing) => {
+    const key = passing.registrationKey || passing.registrationNumber;
+    if (!firstByKey.has(key)) firstByKey.set(key, passing);
+  });
+  const carByKey = new Map(
+    cars.map((car) => [car.registrationKey || car.registrationNumber, car]),
+  );
+  const ordered = [...firstByKey.entries()]
+    .sort(
+      (left, right) =>
+        Date.parse(left[1].recordedAt) - Date.parse(right[1].recordedAt),
+    )
+    .flatMap(([key]) => (carByKey.has(key) ? [carByKey.get(key)!] : []));
+  const seen = new Set(
+    ordered.map((car) => car.registrationKey || car.registrationNumber),
+  );
+  return [
+    ...ordered,
+    ...cars.filter(
+      (car) => !seen.has(car.registrationKey || car.registrationNumber),
+    ),
+  ];
+}
+
+function orderAtLap(passings: LapPassing[], lapNumber: number) {
+  return passings
+    .filter((passing) => passing.lapNumber === lapNumber)
+    .sort((left, right) => {
+      if (left.totalTimeMs !== null && right.totalTimeMs !== null)
+        return left.totalTimeMs - right.totalTimeMs;
+      return Date.parse(left.recordedAt) - Date.parse(right.recordedAt);
+    });
+}
+
 function drawCheckers(page: PDFPage, x: number, y: number) {
   const size = 6;
-  for (let row = 0; row < 3; row += 1) {
-    for (let column = 0; column < 7; column += 1) {
+  for (let row = 0; row < 3; row += 1)
+    for (let column = 0; column < 7; column += 1)
       page.drawRectangle({
         x: x + column * size,
         y: y + row * size,
@@ -423,8 +872,6 @@ function drawCheckers(page: PDFPage, x: number, y: number) {
         height: size,
         color: (row + column) % 2 === 0 ? rgb(1, 1, 1) : YELLOW,
       });
-    }
-  }
 }
 
 function drawCell(
@@ -436,17 +883,17 @@ function drawCell(
   size: number,
   font: PDFFont,
   color: ReturnType<typeof rgb>,
-  align: 'left' | 'right',
+  align: 'left' | 'right' | 'center',
 ) {
   const text = fitText(safeText(value), font, size, width);
   const textWidth = font.widthOfTextAtSize(text, size);
-  page.drawText(text, {
-    x: align === 'right' ? x + width - textWidth : x,
-    y,
-    size,
-    font,
-    color,
-  });
+  const textX =
+    align === 'right'
+      ? x + width - textWidth
+      : align === 'center'
+        ? x + (width - textWidth) / 2
+        : x;
+  page.drawText(text, { x: textX, y, size, font, color });
 }
 
 function drawRight(
@@ -481,12 +928,12 @@ function fitText(value: string, font: PDFFont, size: number, maxWidth: number) {
 
 function rankCars(cars: ResultCar[]) {
   const ranked = [...cars].sort((left, right) => {
-    const timeDifference =
+    const difference =
       lapTimeToMilliseconds(left.bestLap) -
       lapTimeToMilliseconds(right.bestLap);
-    return Number.isNaN(timeDifference)
+    return Number.isNaN(difference)
       ? left.position - right.position
-      : timeDifference || left.position - right.position;
+      : difference || left.position - right.position;
   });
   const leaderTime = ranked.length
     ? lapTimeToMilliseconds(ranked[0].bestLap)
@@ -533,24 +980,55 @@ function parseCar(value: unknown): ResultCar | null {
   if (!value || typeof value !== 'object') return null;
   const car = value as Record<string, unknown>;
   return {
+    registrationKey: stringValue(car.registrationKey),
+    registrationNumber: stringValue(car.registrationNumber),
     number: stringValue(car.number),
     driver: stringValue(car.driver),
-    car: stringValue(car.car),
     groupName: stringValue(car.groupName),
     className: stringValue(car.className),
     position: numberValue(car.position),
     laps: numberValue(car.laps),
     bestLapNumber: numberValue(car.bestLapNumber),
+    totalTime: stringValue(car.totalTime),
     bestLap: stringValue(car.bestLap),
     gap: stringValue(car.gap),
   };
 }
 
+function parsePassings(value: unknown): LapPassing[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item !== 'string') return [];
+    try {
+      const passing = JSON.parse(item) as Record<string, unknown>;
+      if (
+        typeof passing.registrationNumber !== 'string' ||
+        typeof passing.recordedAt !== 'string'
+      )
+        return [];
+      return [
+        {
+          registrationKey: stringValue(passing.registrationKey),
+          registrationNumber: passing.registrationNumber,
+          number: stringValue(passing.number),
+          driver: stringValue(passing.driver),
+          lapNumber: numberValue(passing.lapNumber),
+          lapTime: stringValue(passing.lapTime),
+          lapTimeMs: nullableNumber(passing.lapTimeMs),
+          totalTimeMs: nullableNumber(passing.totalTimeMs),
+          recordedAt: passing.recordedAt,
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+}
+
 async function loadLogo(requestUrl: string) {
   try {
     const response = await fetch(new URL('/cvar-logo.png', requestUrl));
-    if (!response.ok) return null;
-    return new Uint8Array(await response.arrayBuffer());
+    return response.ok ? new Uint8Array(await response.arrayBuffer()) : null;
   } catch {
     return null;
   }
@@ -559,16 +1037,24 @@ async function loadLogo(requestUrl: string) {
 function sessionDescription(snapshot: ResultSnapshot) {
   const type = snapshot.sessionMode === 'race' ? 'Race' : 'Practice';
   const duration = snapshot.raceTime
-    ? ` · ${shortTime(snapshot.raceTime)} elapsed`
+    ? ` - ${shortTime(snapshot.raceTime)} elapsed`
     : snapshot.timeToGo
-      ? ` · ${shortTime(snapshot.timeToGo)} scheduled`
+      ? ` - ${shortTime(snapshot.timeToGo)} scheduled`
       : '';
-  return `${type}${duration} · ${snapshot.flag || 'Timing recorded'}`;
+  return safeText(`${type}${duration} - ${snapshot.flag || 'Timing recorded'}`);
 }
 
 function trackLine(snapshot: ResultSnapshot) {
-  const distance = snapshot.trackLength.split('·')[0]?.trim();
-  return [snapshot.trackName, distance].filter(Boolean).join(' · ');
+  return [snapshot.trackName, formatTrackDistance(snapshot.trackLength)]
+    .filter(Boolean)
+    .join(' - ');
+}
+function formatTrackDistance(value: string) {
+  const distance = value.split(/[·/]/)[0]?.trim();
+  if (!distance) return '';
+  return /^\d+(?:\.\d+)?$/.test(distance)
+    ? `${distance} miles`
+    : distance.replace(/\bmi\b/i, 'miles');
 }
 
 function formatSessionName(value: string) {
@@ -583,23 +1069,25 @@ function formatSessionName(value: string) {
     .replace(/^TT(\d+)$/i, 'Test & Tune $1')
     .replace(/^R(\d+)$/i, 'Race $1')
     .replace(/^PQ$/i, 'Practice / Qualifying');
-  return `${groupLabel} · ${sessionLabel}`;
+  return `${groupLabel} - ${sessionLabel}`;
 }
 
 function formatDate(value: string) {
   const date = new Date(value);
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Chicago',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }).format(date)
-    : '';
+  if (!Number.isFinite(date.getTime())) return '';
+  const day = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+  const time = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+  return `${day} - ${time}`;
 }
-
 function formatDateTime(value: string) {
   const date = new Date(value);
   return Number.isFinite(date.getTime())
@@ -614,6 +1102,18 @@ function formatDateTime(value: string) {
       }).format(date)
     : 'from saved timing data';
 }
+function formatTimeOfDay(value: string) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(date)
+    : '';
+}
 
 function lapTimeToMilliseconds(value: string) {
   if (!value) return Number.POSITIVE_INFINITY;
@@ -627,7 +1127,6 @@ function lapTimeToMilliseconds(value: string) {
     ? ((hours * 60 + minutes) * 60 + seconds) * 1000
     : Number.POSITIVE_INFINITY;
 }
-
 function safeText(value: string) {
   return value
     .normalize('NFKD')
@@ -636,9 +1135,8 @@ function safeText(value: string) {
     .replace(/[–—]/g, '-')
     .replace(/[‘’]/g, "'")
     .replace(/[“”]/g, '"')
-    .replace(/[^\x20-\x7E]/g, '');
+    .replace(/[^\x20-\x7e]/g, '');
 }
-
 function slugify(value: string) {
   return safeText(value)
     .toLowerCase()
@@ -646,7 +1144,12 @@ function slugify(value: string) {
     .replace(/^-|-$/g, '')
     .slice(0, 80);
 }
-
+function chunk<T>(values: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size)
+    chunks.push(values.slice(index, index + size));
+  return chunks;
+}
 function shortTime(value: string) {
   return value.replace(/^00:/, '');
 }
@@ -655,6 +1158,9 @@ function stringValue(value: unknown) {
 }
 function numberValue(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+function nullableNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 function safeId(value: string) {
   return /^[a-z0-9][a-z0-9-]{0,119}$/i.test(value);
