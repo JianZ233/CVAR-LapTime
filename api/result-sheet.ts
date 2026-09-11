@@ -177,10 +177,17 @@ export async function createResultSheet(
   const cars = rankCars(snapshot.cars, adjustments);
   const classificationPages = chunk(cars, 34);
   if (!classificationPages.length) classificationPages.push([]);
+  const penaltyPages = chunk(
+    cars.filter((car) => Boolean(car.resultAdjustment)),
+    18,
+  );
   const lapPages = planLapBreakdownPages(cars, passings);
   const chartPages = planLapChartPages(passings);
   const totalPages =
-    classificationPages.length + lapPages.length + chartPages.length;
+    classificationPages.length +
+    penaltyPages.length +
+    lapPages.length +
+    chartPages.length;
   let pageNumber = 1;
 
   classificationPages.forEach((rows, index) => {
@@ -190,6 +197,19 @@ export async function createResultSheet(
       snapshot,
       rows,
       startPosition: index * 34,
+      pageNumber,
+      totalPages,
+      fonts,
+      logo,
+    });
+    pageNumber += 1;
+  });
+  penaltyPages.forEach((rows) => {
+    const page = document.addPage(A4);
+    drawPenaltyPage({
+      page,
+      snapshot,
+      rows,
       pageNumber,
       totalPages,
       fonts,
@@ -344,51 +364,125 @@ function drawClassificationPage({
       font: fonts.italic,
       color: MUTED,
     });
-  const stewardNotes = rows.filter(
-    (car) =>
-      car.resultAdjustment?.note || car.resultAdjustment?.positionOverride,
+  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
+}
+
+function drawPenaltyPage({
+  page,
+  snapshot,
+  rows,
+  pageNumber,
+  totalPages,
+  fonts,
+  logo,
+}: {
+  page: PDFPage;
+  snapshot: ResultSnapshot;
+  rows: ResultCar[];
+  pageNumber: number;
+  totalPages: number;
+  fonts: Fonts;
+  logo: PDFImage | null;
+}) {
+  const { width } = page.getSize();
+  const contentTop = drawDocumentHeader({
+    page,
+    snapshot,
+    title: 'PENALTIES & STEWARD DECISIONS',
+    label: 'OFFICIAL RESULT ADJUSTMENTS',
+    fonts,
+    logo,
+  });
+  const columns = [
+    { label: 'No.', x: 34, width: 34, align: 'left' as const },
+    { label: 'Driver', x: 72, width: 94, align: 'left' as const },
+    { label: 'Decision', x: 170, width: 112, align: 'left' as const },
+    { label: 'Original', x: 286, width: 55, align: 'right' as const },
+    { label: 'Final', x: 345, width: 58, align: 'right' as const },
+    { label: 'Steward note', x: 411, width: 156, align: 'left' as const },
+  ];
+  const tableTop = contentTop - 17;
+  page.drawRectangle({
+    x: 28,
+    y: tableTop - 2,
+    width: width - 56,
+    height: 18,
+    color: BLUE,
+  });
+  columns.forEach((column) =>
+    drawCell(
+      page,
+      column.label,
+      column.x,
+      tableTop + 4,
+      column.width,
+      7,
+      fonts.bold,
+      rgb(1, 1, 1),
+      column.align,
+    ),
   );
-  if (stewardNotes.length) {
-    const notesTop = tableTop - 19 - rows.length * rowHeight;
-    page.drawText('STEWARD NOTES', {
-      x: 34,
-      y: notesTop,
-      size: 6.5,
-      font: fonts.bold,
-      color: NAVY,
-    });
-    stewardNotes.slice(0, 5).forEach((car, index) => {
-      const adjustment = car.resultAdjustment!;
-      const placement = adjustment.positionOverride
-        ? `Manual position P${adjustment.positionOverride}. `
-        : '';
-      page.drawText(
-        fitText(
-          safeText(
-            `#${car.number || '-'} ${car.driver}: ${placement}${adjustment.note || 'Position set by steward.'}`,
-          ),
-          fonts.regular,
-          6.4,
-          width - 68,
-        ),
-        {
-          x: 34,
-          y: notesTop - 11 - index * 9,
-          size: 6.4,
-          font: fonts.regular,
-          color: MUTED,
-        },
-      );
-    });
-    if (stewardNotes.length > 5)
-      page.drawText(`+${stewardNotes.length - 5} more steward notes`, {
-        x: 34,
-        y: notesTop - 56,
-        size: 6.2,
-        font: fonts.italic,
-        color: MUTED,
+
+  const rowHeight = 29;
+  rows.forEach((car, index) => {
+    const adjustment = car.resultAdjustment!;
+    const rowY = tableTop - 22 - index * rowHeight;
+    if (index % 2 === 1)
+      page.drawRectangle({
+        x: 28,
+        y: rowY - 11,
+        width: width - 56,
+        height: rowHeight,
+        color: ROW_SHADE,
       });
-  }
+    const cells = [
+      car.number || '-',
+      car.driver || `Car ${car.number || '-'}`,
+      penaltyDecision(adjustment),
+      car.bestLap || '-',
+      ['DNF', 'DNS', 'DQ'].includes(adjustment.status)
+        ? adjustment.status
+        : car.adjustedBestLap || car.bestLap || '-',
+      adjustment.note || defaultAdjustmentNote(adjustment),
+    ];
+    columns.forEach((column, cellIndex) =>
+      drawCell(
+        page,
+        cells[cellIndex],
+        column.x,
+        rowY + 2,
+        column.width,
+        7.2,
+        cellIndex === 2 || cellIndex === 4 ? fonts.bold : fonts.regular,
+        cellIndex === 2 || cellIndex === 4 ? NAVY : INK,
+        column.align,
+      ),
+    );
+    page.drawText(
+      fitText(
+        safeText(
+          `Class ${car.className || '-'} | Final position P${car.position}`,
+        ),
+        fonts.regular,
+        6.1,
+        columns[1].width + columns[2].width + 4,
+      ),
+      {
+        x: columns[1].x,
+        y: rowY - 8,
+        size: 6.1,
+        font: fonts.regular,
+        color: MUTED,
+      },
+    );
+    page.drawLine({
+      start: { x: 28, y: rowY - 11 },
+      end: { x: width - 28, y: rowY - 11 },
+      thickness: 0.3,
+      color: LINE,
+    });
+  });
+
   drawFooter(page, snapshot, pageNumber, totalPages, fonts);
 }
 
@@ -1056,6 +1150,25 @@ function resultStatusOrder(status = '') {
 
 function formatPenalty(seconds: number) {
   return seconds > 0 ? `+${seconds.toFixed(3)}s` : '-';
+}
+
+function penaltyDecision(adjustment: ResultAdjustment) {
+  return [
+    adjustment.penaltySeconds > 0
+      ? formatPenalty(adjustment.penaltySeconds)
+      : '',
+    adjustment.status,
+    adjustment.positionOverride ? `P${adjustment.positionOverride}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ');
+}
+
+function defaultAdjustmentNote(adjustment: ResultAdjustment) {
+  if (adjustment.positionOverride) return 'Position set by steward.';
+  if (adjustment.status) return 'Status set by steward.';
+  if (adjustment.penaltySeconds > 0) return 'Time penalty applied.';
+  return 'Steward adjustment recorded.';
 }
 
 function resultStatusLabel(adjustment?: ResultAdjustment) {
