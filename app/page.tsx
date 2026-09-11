@@ -14,7 +14,16 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { eventSchedule, type ScheduleItem } from '@/lib/schedule';
-import { demoSnapshot, isTimingSnapshot, rankSnapshotByBestLap, type TimingSnapshot } from '@/lib/timing';
+import {
+  demoSnapshot,
+  formatSessionName,
+  formatTrackDetail,
+  formatTrackPrimary,
+  formatTrackSummary,
+  isTimingSnapshot,
+  rankSnapshotByBestLap,
+  type TimingSnapshot,
+} from '@/lib/timing';
 
 type FeedState = 'demo' | 'live' | 'stale' | 'history';
 
@@ -99,8 +108,8 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
           <div className="hero-title-row">
             <div>
               <span className="flag-chip"><span className="flag-dot" />{snapshot.flag === 'NOT ACTIVE' ? 'Timing' : snapshot.flag}</span>
-              <h2>{friendlySessionName(snapshot.runName)}</h2>
-              <p>{snapshot.trackName} · {snapshot.trackLength}</p>
+              <h2>{formatSessionName(snapshot.runName)}</h2>
+              <p>{snapshot.trackName} · {formatTrackSummary(snapshot.trackLength, snapshot.trackName)}</p>
             </div>
             <div className="session-clock">
               <span>Session clock</span>
@@ -115,12 +124,12 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
           </div>
           <Select value={selectedSessionId} onValueChange={(value) => onSessionChange(value || 'live')}>
             <SelectTrigger aria-label="Choose timing session" className="session-select">
-              <SelectValue>{selectedSessionId === 'live' ? `Live · ${friendlySessionName(liveSession?.runName || 'Current session')}` : friendlySessionName(selectedSession?.runName || snapshot.runName)}</SelectValue>
+              <SelectValue>{selectedSessionId === 'live' ? `Live · ${formatSessionName(liveSession?.runName || 'Current session')}` : formatSessionName(selectedSession?.runName || snapshot.runName)}</SelectValue>
             </SelectTrigger>
             <SelectContent align="end" className="min-w-72 border-white/10 bg-[#102838] text-white">
-              <SelectItem value="live">Live · {friendlySessionName(liveSession?.runName || 'Current session')}</SelectItem>
+              <SelectItem value="live">Live · {formatSessionName(liveSession?.runName || 'Current session')}</SelectItem>
               {sessions.filter((session) => session.id !== liveSessionId).map((session) => (
-                <SelectItem key={session.id} value={session.id}>{friendlySessionName(session.runName)} · {sessionClockTime(session.startedAt)}</SelectItem>
+                <SelectItem key={session.id} value={session.id}>{formatSessionName(session.runName)} · {sessionClockTime(session.startedAt)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -128,7 +137,7 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
       </section>
 
       <section className="stats-grid">
-        <Stat label="Track" value={trackPrimary(snapshot.trackLength)} detail={trackDetail(snapshot.trackLength)} />
+        <Stat label="Track" value={formatTrackPrimary(snapshot.trackLength)} detail={formatTrackDetail(snapshot.trackLength, snapshot.trackName)} />
         <Stat label="Leader" value={leader ? `#${leader.number}` : '—'} detail={leader?.bestLap || 'No timed laps'} accent />
         <Stat label="Cars timed" value={String(snapshot.cars.length)} detail="Best-lap order" />
       </section>
@@ -319,20 +328,9 @@ function countdownTime(value: string, secondsElapsed: number) {
   return `${hours ? `${hours}:` : ''}${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function friendlySessionName(value: string) {
-  const match = value.match(/^Gp([0-9,]+)-([^=]+)(?:=(.+))?$/i);
-  if (!match) return value;
-  const groups = match[1].split(',');
-  const groupLabel = groups.length === 1 ? `Group ${groups[0]}` : `Groups ${groups.slice(0, -1).join(', ')} & ${groups.at(-1)}`;
-  const sessionLabel = (match[3] || match[2]).replace(/^TT(\d+)$/i, 'Test & Tune $1').replace(/^R(\d+)$/i, 'Race $1').replace(/^PQ$/i, 'Practice / Qualifying');
-  return `${groupLabel} · ${sessionLabel}`;
-}
-
 function sessionClockTime(value: string) {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
 }
 
 function shortTime(value: string) { return value.replace(/^00:/, ''); }
-function trackPrimary(value: string) { return value.split('·')[0]?.trim() || '2.7 mi'; }
-function trackDetail(value: string) { return value.split('·')[1]?.trim() || 'Start / finish loop'; }

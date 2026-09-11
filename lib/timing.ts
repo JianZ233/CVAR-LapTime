@@ -107,6 +107,36 @@ export function rankSnapshotByBestLap(snapshot: TimingSnapshot): TimingSnapshot 
   };
 }
 
+export function formatSessionName(value: string) {
+  const match = value.match(/^Gp([0-9,]+)-([^=]+)(?:=(.+))?$/i);
+  if (!match) return value;
+  const groups = match[1].split(',');
+  const groupLabel = groups.length === 1 ? `Group ${groups[0]}` : `Groups ${groups.slice(0, -1).join(', ')} & ${groups.at(-1)}`;
+  const sessionLabel = (match[3] || match[2])
+    .replace(/^TT(\d+)$/i, 'Test & Tune $1')
+    .replace(/^R(\d+)$/i, 'Race $1')
+    .replace(/^PQ$/i, 'Practice / Qualifying');
+  return `${groupLabel} · ${sessionLabel}`;
+}
+
+export function formatTrackPrimary(value: string) {
+  const distance = value.split('·')[0]?.trim() || '2.7 mi';
+  const match = distance.match(/^(\d+(?:\.\d+)?)\s*(?:mi|miles?)?$/i);
+  if (!match) return distance;
+  return `${Number(match[1]).toLocaleString('en-US', { maximumFractionDigits: 3 })} mi`;
+}
+
+export function formatTrackDetail(value: string, trackName = '') {
+  const detail = value.split('·')[1]?.trim();
+  if (detail) return detail;
+  if (/eagles canyon/i.test(trackName)) return '15 turns';
+  return 'Start / finish loop';
+}
+
+export function formatTrackSummary(value: string, trackName = '') {
+  return `${formatTrackPrimary(value)} · ${formatTrackDetail(value, trackName)}`;
+}
+
 function lapTimeToMilliseconds(value: string) {
   if (!value) return Number.POSITIVE_INFINITY;
   const parts = value.split(':');

@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { formatSessionName } from '@/lib/timing';
 
 type Registration = {
   registrationKey?: string;
@@ -144,8 +145,8 @@ export default function ControlRoomPage() {
 
       <main className="mx-auto max-w-[1800px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">{data.snapshot?.trackName || 'Eagles Canyon Raceway'}</p><h2 className="mt-1 text-2xl font-bold tracking-tight text-white">{data.snapshot?.runName || 'Waiting for Orbits'}</h2></div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Radio className="size-4 text-[#d8ff3e]" />{data.snapshot ? `Updated ${formatTimestamp(data.snapshot.updatedAt)}` : 'No live snapshot yet'}</div>
+          <div><p className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">{data.snapshot?.trackName || 'Eagles Canyon Raceway'}</p><h2 className="mt-1 text-2xl font-bold tracking-tight text-white">{data.snapshot ? formatSessionName(data.snapshot.runName) : 'Waiting for Orbits'}</h2></div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Radio className="size-4 text-[#d8ff3e]" />{data.snapshot ? `Updated ${formatTimestamp(data.snapshot.updatedAt)} · ${formatAge(data.snapshot.updatedAt)}` : 'No live snapshot yet'}</div>
         </div>
 
         <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -170,7 +171,7 @@ export default function ControlRoomPage() {
               <div className="overflow-x-auto">
                 <Table className="min-w-[1320px]">
                   <TableHeader className="bg-black/20"><TableRow className="border-white/10 hover:bg-transparent">
-                    {['Car', 'Driver', 'Transponder', 'Group', 'Class', 'Pos', 'Laps', 'Best lap', 'In lap', 'Last lap', 'Total time', 'Registration ID', 'Additional info'].map((heading) => <TableHead key={heading} className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{heading}</TableHead>)}
+                    {['Car', 'Driver', 'Transponder', 'Group', 'Class', 'Pos', 'Laps', 'Best lap', 'Best lap #', 'Last lap', 'Total time', 'Timing ID', 'Additional info'].map((heading) => <TableHead key={heading} className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{heading}</TableHead>)}
                   </TableRow></TableHeader>
                   <TableBody>
                     {filteredRows.map((row) => <RosterRow key={row.registrationKey || row.registrationNumber} row={row} live={Boolean(row.position)} />)}
@@ -186,7 +187,7 @@ export default function ControlRoomPage() {
               <div className="border-b border-white/10 p-4"><h3 className="font-semibold text-white">Stored sessions</h3><p className="mt-0.5 text-sm text-muted-foreground">Every passing and raw feed record is retained without automatic expiration.</p></div>
               <div className="overflow-x-auto"><Table className="min-w-[850px]">
                 <TableHeader className="bg-black/20"><TableRow className="border-white/10 hover:bg-transparent"><TableHead>Started</TableHead><TableHead>Run</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Passings</TableHead><TableHead className="text-right">Raw records</TableHead><TableHead className="text-right">Private data</TableHead></TableRow></TableHeader>
-                <TableBody>{data.sessions.map((session) => <TableRow key={session.id} className="border-white/10"><TableCell className="font-mono text-sm">{formatTimestamp(session.startedAt)}</TableCell><TableCell><p className="font-medium text-white">{session.runName}</p><p className="font-mono text-xs text-muted-foreground">Run {session.runId || '—'} · {session.id}</p></TableCell><TableCell><Badge variant="outline" className="border-white/15">{session.flag || '—'}</Badge></TableCell><TableCell className="text-right font-mono">{session.passingCount}</TableCell><TableCell className="text-right font-mono">{session.rawRecordCount}</TableCell><TableCell className="text-right"><a className="inline-flex items-center gap-1 text-sm font-medium text-[#d8ff3e] hover:underline" href={`/api/internal?event=${encodeURIComponent(data.eventId)}&session=${encodeURIComponent(session.id)}&raw=1&limit=500`} target="_blank" rel="noreferrer">Open JSON <ExternalLink className="size-3.5" /></a></TableCell></TableRow>)}</TableBody>
+                <TableBody>{data.sessions.map((session) => <TableRow key={session.id} className="border-white/10"><TableCell className="font-mono text-sm">{formatTimestamp(session.startedAt)}</TableCell><TableCell><p className="font-medium text-white">{formatSessionName(session.runName)}</p><p className="font-mono text-xs text-muted-foreground">Run {session.runId || '—'} · {session.id}</p></TableCell><TableCell><Badge variant="outline" className="border-white/15">{session.flag || '—'}</Badge></TableCell><TableCell className="text-right font-mono">{session.passingCount}</TableCell><TableCell className="text-right font-mono">{session.rawRecordCount}</TableCell><TableCell className="text-right"><a className="inline-flex items-center gap-1 text-sm font-medium text-[#d8ff3e] hover:underline" href={`/api/internal?event=${encodeURIComponent(data.eventId)}&session=${encodeURIComponent(session.id)}&raw=1&limit=500`} target="_blank" rel="noreferrer">Open JSON <ExternalLink className="size-3.5" /></a></TableCell></TableRow>)}</TableBody>
               </Table></div>
               {data.sessions.length === 0 && <div className="p-10 text-center text-sm text-muted-foreground">No sessions have been stored yet.</div>}
             </section>
@@ -235,7 +236,7 @@ function InternalStat({ icon: Icon, label, value, detail }: { icon: typeof Radio
 }
 
 function RosterRow({ row, live }: { row: LiveCar; live: boolean }) {
-  return <TableRow className="border-white/10 hover:bg-white/[0.035]"><TableCell><div className="flex items-center gap-2"><span className="inline-grid min-w-11 place-items-center bg-white px-2 py-1 font-mono font-black text-black">{row.number || row.sourceNumber || '—'}</span>{row.ambiguousRegistrationNumber && <Badge variant="outline" className="border-amber-300/25 text-amber-200">duplicate</Badge>}</div>{row.sourceNumber && row.sourceNumber !== row.number && <p className="mt-1 font-mono text-xs text-muted-foreground">source {row.sourceNumber}</p>}</TableCell><TableCell><p className="font-medium text-white">{row.driver || '—'}</p><p className="text-xs text-muted-foreground">{[row.firstName, row.lastName].filter(Boolean).join(' ')}</p></TableCell><TableCell className="font-mono text-[#d8ff3e]">{row.transponderId || '—'}</TableCell><TableCell>{row.groupName || '—'}</TableCell><TableCell>{row.className || '—'}{row.classNumber != null && <span className="ml-1 text-xs text-muted-foreground">({row.classNumber})</span>}</TableCell><TableCell className="font-mono">{live ? row.position : '—'}</TableCell><TableCell className="font-mono">{row.laps ?? '—'}</TableCell><TableCell className="font-mono font-semibold text-[#d8ff3e]">{row.bestLap || '—'}</TableCell><TableCell className="font-mono">{row.bestLapNumber || '—'}</TableCell><TableCell className="font-mono">{row.lastLap || '—'}</TableCell><TableCell className="font-mono">{row.totalTime || '—'}</TableCell><TableCell className="font-mono text-xs">{row.registrationNumber || '—'}</TableCell><TableCell className="max-w-56 truncate text-muted-foreground" title={row.additionalInfo}>{row.additionalInfo || '—'}</TableCell></TableRow>;
+  return <TableRow className="border-white/10 hover:bg-white/[0.035]"><TableCell><div className="flex items-center gap-2"><span className="inline-grid min-w-11 place-items-center bg-white px-2 py-1 font-mono font-black text-black">{row.sourceNumber || row.number || '—'}</span>{row.ambiguousRegistrationNumber && <Badge variant="outline" className="border-amber-300/25 text-amber-200">duplicate entry</Badge>}</div>{row.sourceNumber && row.number && row.sourceNumber !== row.number && <p className="mt-1 font-mono text-xs text-muted-foreground">timing entry {row.number}</p>}</TableCell><TableCell><p className="font-medium text-white">{row.driver || '—'}</p><p className="text-xs text-muted-foreground">{[row.firstName, row.lastName].filter(Boolean).join(' ')}</p></TableCell><TableCell className="font-mono text-[#d8ff3e]">{row.transponderId || '—'}</TableCell><TableCell>{row.groupName || '—'}</TableCell><TableCell>{row.className || '—'}{row.classNumber != null && <span className="ml-1 text-xs text-muted-foreground">({row.classNumber})</span>}</TableCell><TableCell className="font-mono">{live ? row.position : '—'}</TableCell><TableCell className="font-mono">{row.laps ?? '—'}</TableCell><TableCell className="font-mono font-semibold text-[#d8ff3e]">{row.bestLap || '—'}</TableCell><TableCell className="font-mono">{row.bestLapNumber || '—'}</TableCell><TableCell className="font-mono">{row.lastLap || '—'}</TableCell><TableCell className="font-mono">{row.totalTime || '—'}</TableCell><TableCell className="font-mono text-xs">{row.registrationNumber || '—'}</TableCell><TableCell className="max-w-56 truncate text-muted-foreground" title={row.additionalInfo}>{row.additionalInfo || '—'}</TableCell></TableRow>;
 }
 
 function mergeRoster(registrations: Registration[], liveCars: LiveCar[]) {
@@ -250,4 +251,14 @@ function formatTimestamp(value: string) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return value;
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(date);
+}
+
+function formatAge(value: string) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'age unknown';
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
+  if (seconds < 5) return 'live now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ago`;
 }
