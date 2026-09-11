@@ -497,10 +497,18 @@ function ScheduleView() {
           <p className="eyebrow">September 11–13, 2026</p>
           <h2>Canyon Classic at ECR</h2>
         </div>
-        <p className="max-w-md text-sm text-muted-foreground">
-          Times and run order are from the organizer schedule and may change at
-          the track. Listen for grid calls by text, PA, and 464.5000.
-        </p>
+        <div className="flex max-w-md flex-col items-start gap-3 lg:items-end">
+          <p className="text-sm text-muted-foreground lg:text-right">
+            Start times, durations, and run order are from the official event
+            schedule and may change at the track.
+          </p>
+          <Button asChild variant="outline" size="sm">
+            <a href="/ECR-Fall-2026-Schedule.pdf" download>
+              <Download aria-hidden="true" className="size-4" />
+              Download official schedule
+            </a>
+          </Button>
+        </div>
       </div>
 
       <div className="grid items-start gap-4 lg:grid-cols-3">
@@ -672,9 +680,16 @@ function ScheduleRow({ item }: { item: ScheduleItem }) {
         </div>
         {item.duration && <p className="schedule-duration">{item.duration}</p>}
         {item.groups && (
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {item.groups.join(' · ')}
-          </p>
+          <ol className="mt-3 grid gap-1 text-sm text-muted-foreground">
+            {item.groups.map((group, index) => (
+              <li key={`${group}-${index}`} className="flex items-center gap-2">
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-400/25 font-mono text-[0.7rem] text-sky-300">
+                  {index + 1}
+                </span>
+                <span>{group}</span>
+              </li>
+            ))}
+          </ol>
         )}
         {item.note && (
           <p className="mt-2 text-sm leading-5 text-muted-foreground">
