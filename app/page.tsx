@@ -376,7 +376,8 @@ function TimingBoard({
                     Last lap
                   </TableHead>
                   <TableHead className="pr-4 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:pr-5">
-                    Best lap
+                    <span className="xl:hidden">Best / gap</span>
+                    <span className="hidden xl:inline">Best lap</span>
                   </TableHead>
                   <TableHead className="hidden pr-5 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground xl:table-cell">
                     Gap
@@ -444,6 +445,11 @@ function TimingBoard({
                           raw {car.bestLap}
                         </span>
                       )}
+                      <span className="mt-1 block text-[0.7rem] font-semibold text-sky-300 xl:hidden">
+                        {car.position === 1
+                          ? 'Leader'
+                          : `Gap ${car.gap || '—'}`}
+                      </span>
                     </TableCell>
                     <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground xl:table-cell">
                       {car.gap || '—'}
