@@ -35,6 +35,7 @@ export type TimingSnapshot = {
   runName: string;
   sessionMode: 'race' | 'practice';
   flag: string;
+  flagStartedAt: string;
   lapsToGo: number | null;
   timeToGo: string;
   timeOfDay: string;
@@ -60,6 +61,7 @@ export const demoSnapshot: TimingSnapshot = {
   runName: 'Groups 2 & 7 · Test & Tune',
   sessionMode: 'practice',
   flag: 'GREEN',
+  flagStartedAt: new Date().toISOString(),
   lapsToGo: null,
   timeToGo: '18:42',
   timeOfDay: '08:19:35',

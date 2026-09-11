@@ -55,6 +55,16 @@ type ResultSnapshot = {
   cars: ResultCar[];
 };
 
+type FlagTransition = {
+  flag: string;
+  startedAt: string;
+};
+
+type FlagPeriod = FlagTransition & {
+  endedAt: string;
+  durationMs: number;
+};
+
 type Fonts = { regular: PDFFont; bold: PDFFont; italic: PDFFont };
 type LapBlock = { car: ResultCar; laps: LapPassing[]; continued?: boolean };
 
@@ -98,14 +108,16 @@ export async function GET(request: Request) {
     }
 
     const sessionPrefix = `cvar:event:${eventId}:session:${sessionId}`;
-    const [stored, passingIdValues, adjustments] = await Promise.all([
-      redisCommand([
-        'GET',
-        requestedSessionId ? `${sessionPrefix}:latest` : 'cvar:live',
-      ]),
-      redisCommand(['ZRANGE', `${sessionPrefix}:passing-order`, 0, -1]),
-      readAdjustments(eventId, sessionId),
-    ]);
+    const [stored, passingIdValues, flagValues, adjustments] =
+      await Promise.all([
+        redisCommand([
+          'GET',
+          requestedSessionId ? `${sessionPrefix}:latest` : 'cvar:live',
+        ]),
+        redisCommand(['ZRANGE', `${sessionPrefix}:passing-order`, 0, -1]),
+        redisCommand(['ZRANGE', `${sessionPrefix}:flag-history`, 0, -1]),
+        readAdjustments(eventId, sessionId),
+      ]);
     if (typeof stored !== 'string') {
       return Response.json(
         { error: 'Result sheet data is not available' },
@@ -134,6 +146,7 @@ export async function GET(request: Request) {
       parsePassings(passingValues),
       await loadLogo(request.url),
       adjustments,
+      parseFlagHistory(flagValues),
     );
     const filename = `${slugify(formatSessionName(snapshot.runName)) || 'cvar-session'}-results.pdf`;
     const body = pdf.buffer.slice(
@@ -162,6 +175,7 @@ export async function createResultSheet(
   passings: LapPassing[],
   logoBytes: Uint8Array | null,
   adjustments: Record<string, ResultAdjustment> = {},
+  flagHistory: FlagTransition[] = [],
 ) {
   const document = await PDFDocument.create();
   document.setTitle(`${formatSessionName(snapshot.runName)} results`);
@@ -183,11 +197,14 @@ export async function createResultSheet(
     cars.filter((car) => Boolean(car.resultAdjustment)),
     18,
   );
+  const flagPages = chunk(buildFlagPeriods(flagHistory, snapshot), 27);
+  if (!flagPages.length) flagPages.push([]);
   const lapPages = planLapBreakdownPages(cars, passings);
   const chartPages = planLapChartPages(passings);
   const totalPages =
     classificationPages.length +
     penaltyPages.length +
+    flagPages.length +
     lapPages.length +
     chartPages.length;
   let pageNumber = 1;
@@ -212,6 +229,20 @@ export async function createResultSheet(
       page,
       snapshot,
       rows,
+      pageNumber,
+      totalPages,
+      fonts,
+      logo,
+    });
+    pageNumber += 1;
+  });
+  flagPages.forEach((rows, index) => {
+    const page = document.addPage(A4);
+    drawFlagHistoryPage({
+      page,
+      snapshot,
+      rows,
+      startIndex: index * 27,
       pageNumber,
       totalPages,
       fonts,
@@ -485,6 +516,137 @@ function drawPenaltyPage({
     });
   });
 
+  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
+}
+
+function drawFlagHistoryPage({
+  page,
+  snapshot,
+  rows,
+  startIndex,
+  pageNumber,
+  totalPages,
+  fonts,
+  logo,
+}: {
+  page: PDFPage;
+  snapshot: ResultSnapshot;
+  rows: FlagPeriod[];
+  startIndex: number;
+  pageNumber: number;
+  totalPages: number;
+  fonts: Fonts;
+  logo: PDFImage | null;
+}) {
+  const { width } = page.getSize();
+  const contentTop = drawDocumentHeader({
+    page,
+    snapshot,
+    title: 'FLAG HISTORY',
+    label: 'SESSION FLAG CHANGES',
+    fonts,
+    logo,
+  });
+  const columns = [
+    { label: '#', x: 34, width: 25, align: 'right' as const },
+    { label: 'Flag', x: 74, width: 105, align: 'left' as const },
+    { label: 'Started (CT)', x: 194, width: 118, align: 'left' as const },
+    { label: 'Through (CT)', x: 327, width: 118, align: 'left' as const },
+    { label: 'Duration', x: 460, width: 107, align: 'right' as const },
+  ];
+  const tableTop = contentTop - 17;
+  page.drawRectangle({
+    x: 28,
+    y: tableTop - 2,
+    width: width - 56,
+    height: 18,
+    color: BLUE,
+  });
+  columns.forEach((column) =>
+    drawCell(
+      page,
+      column.label,
+      column.x,
+      tableTop + 4,
+      column.width,
+      7,
+      fonts.bold,
+      rgb(1, 1, 1),
+      column.align,
+    ),
+  );
+
+  const rowHeight = 19;
+  rows.forEach((period, index) => {
+    const rowY = tableTop - 19 - index * rowHeight;
+    if (index % 2 === 1)
+      page.drawRectangle({
+        x: 28,
+        y: rowY - 3.5,
+        width: width - 56,
+        height: rowHeight,
+        color: ROW_SHADE,
+      });
+    page.drawRectangle({
+      x: columns[1].x,
+      y: rowY - 0.5,
+      width: 8,
+      height: 8,
+      color: flagColor(period.flag),
+      borderColor: LINE,
+      borderWidth: 0.5,
+    });
+    const cells = [
+      String(startIndex + index + 1),
+      period.flag,
+      formatFlagTimestamp(period.startedAt),
+      formatFlagTimestamp(period.endedAt),
+      formatFlagDuration(period.durationMs),
+    ];
+    columns.forEach((column, cellIndex) =>
+      drawCell(
+        page,
+        cells[cellIndex],
+        cellIndex === 1 ? column.x + 13 : column.x,
+        rowY,
+        cellIndex === 1 ? column.width - 13 : column.width,
+        7.4,
+        cellIndex === 1 || cellIndex === 4 ? fonts.bold : fonts.regular,
+        cellIndex === 1 ? flagTextColor(period.flag) : INK,
+        column.align,
+      ),
+    );
+    page.drawLine({
+      start: { x: 28, y: rowY - 3.5 },
+      end: { x: width - 28, y: rowY - 3.5 },
+      thickness: 0.3,
+      color: LINE,
+    });
+  });
+
+  if (!rows.length) {
+    page.drawText(
+      'Detailed flag transitions were not recorded for this saved session.',
+      {
+        x: 38,
+        y: tableTop - 50,
+        size: 10,
+        font: fonts.italic,
+        color: MUTED,
+      },
+    );
+  } else {
+    page.drawText(
+      'Each duration runs from the flag change through the next recorded change, or through the final timing update.',
+      {
+        x: 34,
+        y: Math.max(100, tableTop - 32 - rows.length * rowHeight),
+        size: 7,
+        font: fonts.italic,
+        color: MUTED,
+      },
+    );
+  }
   drawFooter(page, snapshot, pageNumber, totalPages, fonts);
 }
 
@@ -1270,6 +1432,59 @@ function parsePassings(value: unknown): LapPassing[] {
   });
 }
 
+function parseFlagHistory(value: unknown): FlagTransition[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item !== 'string') return [];
+    try {
+      const transition = JSON.parse(item) as Record<string, unknown>;
+      return typeof transition.flag === 'string' &&
+        typeof transition.startedAt === 'string'
+        ? [
+            {
+              flag: normalizeFlag(transition.flag),
+              startedAt: transition.startedAt,
+            },
+          ]
+        : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function buildFlagPeriods(
+  transitions: FlagTransition[],
+  snapshot: ResultSnapshot,
+): FlagPeriod[] {
+  const ordered = transitions
+    .filter((transition) => Number.isFinite(Date.parse(transition.startedAt)))
+    .sort(
+      (left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt),
+    )
+    .filter(
+      (transition, index, values) =>
+        index === 0 || transition.flag !== values[index - 1].flag,
+    );
+  const finalUpdate = Date.parse(snapshot.updatedAt);
+  return ordered.map((transition, index) => {
+    const startedAtMs = Date.parse(transition.startedAt);
+    const nextStartedAt = ordered[index + 1]?.startedAt;
+    const nextStartedAtMs = nextStartedAt ? Date.parse(nextStartedAt) : NaN;
+    const endedAtMs = Number.isFinite(nextStartedAtMs)
+      ? nextStartedAtMs
+      : Number.isFinite(finalUpdate) && finalUpdate >= startedAtMs
+        ? finalUpdate
+        : startedAtMs;
+    return {
+      ...transition,
+      startedAt: new Date(startedAtMs).toISOString(),
+      endedAt: new Date(Math.max(startedAtMs, endedAtMs)).toISOString(),
+      durationMs: Math.max(0, endedAtMs - startedAtMs),
+    };
+  });
+}
+
 async function loadLogo(requestUrl: string) {
   try {
     const response = await fetch(new URL('/cvar-logo.png', requestUrl));
@@ -1372,6 +1587,55 @@ function formatTimeOfDay(value: string) {
         hour12: false,
       }).format(date)
     : '';
+}
+
+function formatFlagTimestamp(value: string) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+      }).format(date)
+    : '-';
+}
+
+function formatFlagDuration(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.round(milliseconds / 1_000));
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function normalizeFlag(value: string) {
+  return value.trim().toUpperCase() || 'NOT ACTIVE';
+}
+
+function flagColor(value: string) {
+  const flag = normalizeFlag(value);
+  if (flag.includes('YELLOW')) return YELLOW;
+  if (flag.includes('RED')) return rgb(0.84, 0.16, 0.16);
+  if (flag.includes('BLUE')) return rgb(0.18, 0.48, 0.82);
+  if (flag.includes('WHITE')) return rgb(1, 1, 1);
+  if (flag.includes('BLACK')) return rgb(0.02, 0.025, 0.03);
+  if (/FINISH|CHECKERED|CHEQUERED/.test(flag)) return INK;
+  if (flag.includes('GREEN')) return rgb(0.18, 0.63, 0.3);
+  return rgb(0.5, 0.57, 0.61);
+}
+
+function flagTextColor(value: string) {
+  const flag = normalizeFlag(value);
+  if (flag.includes('YELLOW')) return rgb(0.55, 0.38, 0.01);
+  if (flag.includes('RED')) return rgb(0.66, 0.08, 0.08);
+  if (flag.includes('BLUE')) return rgb(0.05, 0.3, 0.65);
+  if (flag.includes('GREEN')) return rgb(0.05, 0.4, 0.13);
+  return NAVY;
 }
 
 function lapTimeToMilliseconds(value: string) {

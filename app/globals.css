@@ -352,6 +352,50 @@
     box-shadow: 0 0 0 4px rgb(109 222 138 / 0.13);
   }
 
+  .flag-duration {
+    color: #c5d3db;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+  }
+
+  .flag-yellow .flag-dot {
+    background: #f4c944;
+    box-shadow: 0 0 0 4px rgb(244 201 68 / 0.16);
+  }
+
+  .flag-red .flag-dot {
+    background: #ef5b5b;
+    box-shadow: 0 0 0 4px rgb(239 91 91 / 0.16);
+  }
+
+  .flag-blue .flag-dot {
+    background: #58aaf5;
+    box-shadow: 0 0 0 4px rgb(88 170 245 / 0.16);
+  }
+
+  .flag-white .flag-dot {
+    background: #fff;
+    box-shadow: 0 0 0 4px rgb(255 255 255 / 0.12);
+  }
+
+  .flag-black .flag-dot {
+    border: 1px solid #7f919b;
+    background: #050607;
+    box-shadow: 0 0 0 4px rgb(127 145 155 / 0.12);
+  }
+
+  .flag-checkered .flag-dot {
+    border: 1px solid #c5d3db;
+    background: conic-gradient(#fff 25%, #071923 0 50%, #fff 0 75%, #071923 0);
+    background-size: 0.32rem 0.32rem;
+    box-shadow: 0 0 0 4px rgb(255 255 255 / 0.1);
+  }
+
+  .flag-inactive .flag-dot {
+    background: #81939d;
+    box-shadow: 0 0 0 4px rgb(129 147 157 / 0.13);
+  }
+
   .session-clock {
     flex: 0 0 auto;
     border-left: 1px solid rgb(255 255 255 / 0.22);

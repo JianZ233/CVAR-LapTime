@@ -161,6 +161,7 @@ function sanitizeSnapshot(
       runName: snapshot.runName,
       sessionMode: snapshot.sessionMode === 'race' ? 'race' : 'practice',
       flag: stringValue(snapshot.flag),
+      flagStartedAt: stringValue(snapshot.flagStartedAt),
       lapsToGo:
         typeof snapshot.lapsToGo === 'number' ? snapshot.lapsToGo : null,
       timeToGo: stringValue(snapshot.timeToGo),

@@ -230,9 +230,15 @@ function TimingBoard({
           </div>
           <div className="hero-title-row">
             <div>
-              <span className="flag-chip">
+              <span className={`flag-chip ${flagClassName(snapshot.flag)}`}>
                 <span className="flag-dot" />
                 {snapshot.flag === 'NOT ACTIVE' ? 'Timing' : snapshot.flag}
+                <span className="flag-duration">
+                  ·{' '}
+                  {formatElapsed(
+                    flagElapsedSeconds(snapshot, feedState, secondsAgo),
+                  )}
+                </span>
               </span>
               <h2>{formatSessionName(snapshot.runName)}</h2>
               <p>
@@ -873,6 +879,42 @@ function sessionClockText(
   if (snapshot.lapsToGo !== null && snapshot.lapsToGo < 9_999)
     return `${snapshot.lapsToGo} laps to go`;
   return 'Session active';
+}
+
+function flagElapsedSeconds(
+  snapshot: TimingSnapshot,
+  feedState: FeedState,
+  secondsAgo: number,
+) {
+  const startedAt = new Date(
+    snapshot.flagStartedAt || snapshot.initializedAt || snapshot.updatedAt,
+  ).getTime();
+  const updatedAt = new Date(snapshot.updatedAt).getTime();
+  if (!Number.isFinite(startedAt) || !Number.isFinite(updatedAt)) return 0;
+  const endAt =
+    feedState === 'history' ? updatedAt : updatedAt + secondsAgo * 1_000;
+  return Math.max(0, Math.floor((endAt - startedAt) / 1_000));
+}
+
+function formatElapsed(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function flagClassName(value: string) {
+  const flag = value.trim().toLowerCase();
+  if (flag.includes('yellow')) return 'flag-yellow';
+  if (flag.includes('red')) return 'flag-red';
+  if (flag.includes('blue')) return 'flag-blue';
+  if (flag.includes('white')) return 'flag-white';
+  if (flag.includes('black')) return 'flag-black';
+  if (/finish|checkered|chequered/.test(flag)) return 'flag-checkered';
+  if (flag.includes('green')) return 'flag-green';
+  return 'flag-inactive';
 }
 
 function countdownTime(value: string, secondsElapsed: number) {
