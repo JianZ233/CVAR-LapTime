@@ -77,6 +77,16 @@ npm run relay
 
 The relay sends lap crossings immediately and refreshes the board at least every 10 seconds. Set `CVAR_PUBLISH_INTERVAL_MS` to change the idle refresh interval.
 
+### Keep the relay running automatically on macOS
+
+After `.env.live` is configured, install the per-user launch service once:
+
+```bash
+npm run relay:service:install
+```
+
+The installer copies the relay and its protected environment file into `~/Library/Application Support/CVAR-LapTime/`, outside macOS-protected Documents folders. The service starts at login, restarts automatically if it exits, and reconnects when the Orbits TCP feed returns. Re-run the install command after updating the relay code or `.env.live`. Check it with `npm run relay:service:status` and remove it with `npm run relay:service:uninstall`. Logs are stored in `~/Library/Logs/CVAR/`.
+
 Set `CVAR_SESSION_MODE` to `race` or `practice` if a session name does not contain an obvious word such as Race, Practice, or Qualifying.
 
 When it is working, the terminal prints messages such as:
