@@ -498,8 +498,8 @@ function ScheduleView() {
           <h2>Canyon Classic at ECR</h2>
         </div>
         <p className="max-w-md text-sm text-muted-foreground">
-          Run order is from the organizer schedule and may change at the track.
-          Listen for grid calls by text, PA, and 464.5000.
+          Times and run order are from the organizer schedule and may change at
+          the track. Listen for grid calls by text, PA, and 464.5000.
         </p>
       </div>
 
@@ -662,12 +662,15 @@ function ScheduleRow({ item }: { item: ScheduleItem }) {
     <div className={`schedule-row schedule-row-${item.kind || 'track'}`}>
       <Icon aria-hidden="true" className="mt-0.5 size-4" />
       <div>
-        <p className="font-semibold text-white">{item.title}</p>
-        {scheduleSessionLabel(item.duration) && (
-          <p className="schedule-duration">
-            {scheduleSessionLabel(item.duration)}
-          </p>
-        )}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <p className="font-semibold text-white">{item.title}</p>
+          {item.time && (
+            <time className="font-mono text-sm text-slate-300">
+              {item.time}
+            </time>
+          )}
+        </div>
+        {item.duration && <p className="schedule-duration">{item.duration}</p>}
         {item.groups && (
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {item.groups.join(' · ')}
@@ -681,11 +684,6 @@ function ScheduleRow({ item }: { item: ScheduleItem }) {
       </div>
     </div>
   );
-}
-
-function scheduleSessionLabel(value?: string) {
-  if (!value || /^\d+\s*min$/i.test(value.trim())) return '';
-  return value.replace(/\s*·\s*\d+\s*min$/i, '').trim();
 }
 
 function useLiveTiming() {

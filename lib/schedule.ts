@@ -157,7 +157,7 @@ export const eventSchedule: ScheduleDay[] = [
       {
         title: 'Decatur Square Car Show',
         time: '4:30 PM',
-        note: 'Line up at the guard shack for police escort.',
+        note: 'Line up at the guard shack for police escort. Leave promptly at 5:00 PM.',
         kind: 'social',
       },
     ],
