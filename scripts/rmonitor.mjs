@@ -26,6 +26,8 @@ export function parseCsvLine(line) {
 export function createTimingState(options = {}) {
   const classes = new Map();
   const competitors = new Map();
+  const pendingPassings = [];
+  const seenPassingIds = new Set();
   const configuredMode = ['race', 'practice'].includes(options.sessionMode) ? options.sessionMode : 'auto';
   let inferredMode = 'practice';
   let runName = 'Waiting for session';
@@ -40,6 +42,7 @@ export function createTimingState(options = {}) {
       competitors.set(registrationNumber, {
         registrationNumber,
         number: registrationNumber,
+        transponderId: '',
         driver: '',
         car: '',
         classNumber: null,
@@ -49,6 +52,7 @@ export function createTimingState(options = {}) {
         totalTimeMs: null,
         lastLapMs: null,
         bestLapMs: null,
+        passingCount: 0,
       });
     }
     return competitors.get(registrationNumber);
@@ -62,6 +66,7 @@ export function createTimingState(options = {}) {
     if (command === '$I') {
       classes.clear();
       competitors.clear();
+      seenPassingIds.clear();
       flag = 'NOT ACTIVE';
       lapsToGo = null;
       timeToGo = '';
@@ -91,6 +96,7 @@ export function createTimingState(options = {}) {
     if (command === '$A') {
       const car = ensureCompetitor(fields[1]);
       car.number = fields[2] || car.number;
+      car.transponderId = fields[3] || car.transponderId;
       car.driver = [fields[4], fields[5]].filter(Boolean).join(' ').trim();
       car.car = fields[6] || '';
       car.classNumber = numberOrNull(fields[7]);
@@ -131,9 +137,30 @@ export function createTimingState(options = {}) {
     if (command === '$J') {
       const car = ensureCompetitor(fields[1]);
       const lap = timeToMilliseconds(fields[2]);
+      const total = timeToMilliseconds(fields[3]);
       car.lastLapMs = lap;
-      car.totalTimeMs = timeToMilliseconds(fields[3]);
+      car.totalTimeMs = total;
       if (lap !== null && (car.bestLapMs === null || lap < car.bestLapMs)) car.bestLapMs = lap;
+      car.passingCount = Math.max(car.passingCount + 1, car.laps);
+      const passingId = `${car.registrationNumber}|${fields[3] || fields[2]}|${car.passingCount}`;
+      if (!seenPassingIds.has(passingId)) {
+        seenPassingIds.add(passingId);
+        pendingPassings.push({
+          id: passingId,
+          registrationNumber: car.registrationNumber,
+          transponderId: car.transponderId,
+          number: car.number,
+          driver: car.driver,
+          car: car.car,
+          className: classes.get(car.classNumber) || (car.classNumber !== null ? `Class ${car.classNumber}` : ''),
+          lapNumber: car.passingCount,
+          lapTime: formatLapTime(lap),
+          lapTimeMs: lap,
+          totalTime: fields[3] || '',
+          totalTimeMs: total,
+          recordedAt: new Date().toISOString(),
+        });
+      }
       return true;
     }
 
@@ -179,6 +206,7 @@ export function createTimingState(options = {}) {
         className: classes.get(car.classNumber) || (car.classNumber !== null ? `Class ${car.classNumber}` : ''),
         position: car[positionKey] || index + 1,
         laps: car.laps,
+        totalTime: formatLapTime(car.totalTimeMs),
         lastLap: formatLapTime(car.lastLapMs),
         bestLap: formatLapTime(car.bestLapMs),
         gap: formatGap(sessionMode, leader, car),
@@ -186,7 +214,22 @@ export function createTimingState(options = {}) {
     };
   }
 
-  return { apply, snapshot };
+  function drainPassings() {
+    return pendingPassings.splice(0);
+  }
+
+  function registrations() {
+    return [...competitors.values()].map((car) => ({
+      registrationNumber: car.registrationNumber,
+      transponderId: car.transponderId,
+      number: car.number,
+      driver: car.driver,
+      car: car.car,
+      className: classes.get(car.classNumber) || (car.classNumber !== null ? `Class ${car.classNumber}` : ''),
+    }));
+  }
+
+  return { apply, snapshot, drainPassings, registrations };
 }
 
 export function timeToMilliseconds(value) {

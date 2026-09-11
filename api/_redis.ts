@@ -6,17 +6,30 @@ export function redisIsConfigured() {
 }
 
 export async function redisCommand(command: Array<string | number>) {
+  return redisRequest('', command);
+}
+
+export async function redisPipeline(commands: Array<Array<string | number>>) {
+  const result = await redisRequest('/pipeline', commands);
+  if (!Array.isArray(result)) throw new Error('Redis returned an invalid pipeline response');
+  for (const item of result as Array<{ error?: string }>) {
+    if (item?.error) throw new Error(item.error);
+  }
+  return result;
+}
+
+async function redisRequest(path: string, bodyValue: unknown) {
   if (!redisUrl || !redisToken) throw new Error('Redis is not configured');
-  const response = await fetch(redisUrl, {
+  const response = await fetch(`${redisUrl.replace(/\/$/, '')}${path}`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${redisToken}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify(command),
+    body: JSON.stringify(bodyValue),
   });
   if (!response.ok) throw new Error(`Redis returned ${response.status}`);
-  const body = await response.json() as { result?: unknown; error?: string };
-  if (body.error) throw new Error(body.error);
-  return body.result;
+  const body = await response.json() as { result?: unknown; error?: string } | Array<{ result?: unknown; error?: string }>;
+  if (!Array.isArray(body) && body.error) throw new Error(body.error);
+  return path ? body : (body as { result?: unknown }).result;
 }

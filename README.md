@@ -25,7 +25,9 @@ X2 transponders + start/finish loop
        Vercel /api/live -> timing board
 ```
 
-Vercel cannot open a TCP connection into the private network in the control room. That is why the small outbound relay is required. It reads the local Orbits feed and posts a current snapshot to Vercel.
+Vercel cannot open a TCP connection into the private network in the control room. That is why the small outbound relay is required. It reads the local Orbits feed and posts timing data to Vercel.
+
+Redis keeps the current public board plus a durable archive of each session's latest classification, every unique lap passing, and registration/transponder assignments. Repeated heartbeat screens are not archived as duplicate race data. Archived data has no automatic expiration and is available only through the authenticated `/api/archive` endpoint. See [Timing data storage](docs/DATA-STORAGE.md) for the record layout and export route.
 
 The RMonitor feed includes competitor (`$A`/`$COMP`), class (`$C`), race order (`$G`), practice/qualifying order (`$H`), passing (`$J`), and heartbeat/flag (`$F`) records. The relay parses those records and does not need direct access to the X2 decoder.
 
@@ -66,11 +68,14 @@ $env:ORBITS_HOST="127.0.0.1"
 $env:ORBITS_PORT="50000"
 $env:CVAR_INGEST_URL="https://YOUR-PROJECT.vercel.app/api/ingest"
 $env:CVAR_INGEST_KEY="THE-SAME-VALUE-AS-CVAR_INGEST_SECRET"
+$env:CVAR_EVENT_ID="canyon-classic-2026"
 $env:CVAR_EVENT_NAME="Canyon Classic at ECR"
 $env:CVAR_TRACK_LENGTH="2.7 mi · 15 turns"
 $env:CVAR_SESSION_MODE="auto"
 npm run relay
 ```
+
+The relay sends lap crossings immediately and refreshes the board at least every 10 seconds. Set `CVAR_PUBLISH_INTERVAL_MS` to change the idle refresh interval.
 
 Set `CVAR_SESSION_MODE` to `race` or `practice` if a session name does not contain an obvious word such as Race, Practice, or Qualifying.
 

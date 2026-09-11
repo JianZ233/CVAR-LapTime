@@ -104,9 +104,10 @@ function TimingBoard({ snapshot, feedState, secondsAgo }: { snapshot: TimingSnap
                 <TableHead className="min-w-[210px] font-mono text-xs uppercase tracking-wider text-muted-foreground">Driver</TableHead>
                 <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground md:table-cell">Class</TableHead>
                 <TableHead className="text-right font-mono text-xs uppercase tracking-wider text-muted-foreground">Laps</TableHead>
+                <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">Total time</TableHead>
                 <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:table-cell">Last lap</TableHead>
                 <TableHead className="pr-4 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:pr-5">Best lap</TableHead>
-                <TableHead className="hidden pr-5 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">Gap</TableHead>
+                <TableHead className="hidden pr-5 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground xl:table-cell">Gap</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -117,9 +118,10 @@ function TimingBoard({ snapshot, feedState, secondsAgo }: { snapshot: TimingSnap
                   <TableCell className="py-4"><p className="font-semibold text-white">{car.driver || `Car ${car.number}`}</p>{car.car && <p className="mt-0.5 text-xs text-muted-foreground">{car.car}</p>}</TableCell>
                   <TableCell className="hidden text-zinc-300 md:table-cell">{car.className || '—'}</TableCell>
                   <TableCell className="text-right font-mono text-base tabular-nums">{car.laps}</TableCell>
+                  <TableCell className="hidden text-right font-mono text-base tabular-nums text-zinc-300 lg:table-cell">{car.totalTime || '—'}</TableCell>
                   <TableCell className="hidden text-right font-mono text-base tabular-nums text-zinc-300 sm:table-cell">{car.lastLap || '—'}</TableCell>
                   <TableCell className="pr-4 text-right font-mono text-base font-bold tabular-nums text-[#d8ff3e] sm:pr-5">{car.bestLap || '—'}</TableCell>
-                  <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground lg:table-cell">{car.gap || '—'}</TableCell>
+                  <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground xl:table-cell">{car.gap || '—'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

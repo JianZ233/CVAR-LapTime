@@ -17,6 +17,26 @@ test('builds practice standings from Orbits records', () => {
   ['$B,1,"Practice 1"', '$C,7,"Group 7"', '$A,"R1","65",123,"Sam","LeComte","Lotus 23B",7', '$A,"R2","14",456,"Morgan","Ellis","Porsche 914",7', '$J,"R1","00:02:03.826","00:02:03.826"', '$J,"R2","00:02:04.100","00:02:04.100"', '$H,1,"R1",1,"00:02:03.826"', '$H,2,"R2",1,"00:02:04.100"'].forEach((line) => state.apply(line));
   const snapshot = state.snapshot();
   assert.equal(snapshot.cars[0].number, '65');
+  assert.equal(snapshot.cars[0].totalTime, '2:03.826');
   assert.equal(snapshot.cars[1].gap, '+0.274');
   assert.equal(snapshot.cars[0].className, 'Group 7');
+  const passings = state.drainPassings();
+  assert.equal(passings.length, 2);
+  assert.deepEqual(passings[0], {
+    id: 'R1|00:02:03.826|1',
+    registrationNumber: 'R1',
+    transponderId: '123',
+    number: '65',
+    driver: 'Sam LeComte',
+    car: 'Lotus 23B',
+    className: 'Group 7',
+    lapNumber: 1,
+    lapTime: '2:03.826',
+    lapTimeMs: 123826,
+    totalTime: '00:02:03.826',
+    totalTimeMs: 123826,
+    recordedAt: passings[0].recordedAt,
+  });
+  assert.equal(state.drainPassings().length, 0);
+  assert.equal(state.registrations()[0].transponderId, '123');
 });
