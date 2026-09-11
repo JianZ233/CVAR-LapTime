@@ -8,6 +8,7 @@ import {
 } from 'pdf-lib';
 
 import { redisCommand, redisIsConfigured } from './_redis.js';
+import { readAdjustments, type ResultAdjustment } from './_adjustments.js';
 
 type ResultCar = {
   registrationKey: string;
@@ -22,6 +23,8 @@ type ResultCar = {
   totalTime: string;
   bestLap: string;
   gap: string;
+  adjustedBestLap?: string;
+  resultAdjustment?: ResultAdjustment;
 };
 
 type LapPassing = {
@@ -93,12 +96,13 @@ export async function GET(request: Request) {
     }
 
     const sessionPrefix = `cvar:event:${eventId}:session:${sessionId}`;
-    const [stored, passingIdValues] = await Promise.all([
+    const [stored, passingIdValues, adjustments] = await Promise.all([
       redisCommand([
         'GET',
         requestedSessionId ? `${sessionPrefix}:latest` : 'cvar:live',
       ]),
       redisCommand(['ZRANGE', `${sessionPrefix}:passing-order`, 0, -1]),
+      readAdjustments(eventId, sessionId),
     ]);
     if (typeof stored !== 'string') {
       return Response.json(
@@ -127,6 +131,7 @@ export async function GET(request: Request) {
       snapshot,
       parsePassings(passingValues),
       await loadLogo(request.url),
+      adjustments,
     );
     const filename = `${slugify(formatSessionName(snapshot.runName)) || 'cvar-session'}-results.pdf`;
     const body = pdf.buffer.slice(
@@ -154,6 +159,7 @@ export async function createResultSheet(
   snapshot: ResultSnapshot,
   passings: LapPassing[],
   logoBytes: Uint8Array | null,
+  adjustments: Record<string, ResultAdjustment> = {},
 ) {
   const document = await PDFDocument.create();
   document.setTitle(`${formatSessionName(snapshot.runName)} results`);
@@ -168,7 +174,7 @@ export async function createResultSheet(
   const logo = logoBytes
     ? await document.embedPng(logoBytes).catch(() => null)
     : null;
-  const cars = rankCars(snapshot.cars);
+  const cars = rankCars(snapshot.cars, adjustments);
   const classificationPages = chunk(cars, 34);
   if (!classificationPages.length) classificationPages.push([]);
   const lapPages = planLapBreakdownPages(cars, passings);
@@ -246,21 +252,21 @@ function drawClassificationPage({
     page,
     snapshot,
     title: 'RESULT SHEET',
-    label: 'SORTED ON BEST LAP',
+    label: 'ADJUSTED BEST-LAP ORDER',
     fonts,
     logo,
   });
   const columns = [
     { label: 'Pos', x: 34, width: 24, align: 'right' as const },
     { label: 'No.', x: 62, width: 28, align: 'left' as const },
-    { label: 'Driver', x: 94, width: 96, align: 'left' as const },
-    { label: 'Class', x: 194, width: 48, align: 'left' as const },
-    { label: 'Group', x: 246, width: 62, align: 'left' as const },
-    { label: 'Laps', x: 312, width: 28, align: 'right' as const },
-    { label: 'Total time', x: 344, width: 68, align: 'right' as const },
-    { label: 'Best Tm', x: 416, width: 58, align: 'right' as const },
-    { label: 'In Lap', x: 478, width: 35, align: 'right' as const },
-    { label: 'Gap', x: 517, width: 50, align: 'right' as const },
+    { label: 'Driver', x: 94, width: 88, align: 'left' as const },
+    { label: 'Class', x: 186, width: 44, align: 'left' as const },
+    { label: 'Laps', x: 234, width: 27, align: 'right' as const },
+    { label: 'Total time', x: 265, width: 65, align: 'right' as const },
+    { label: 'Best Tm', x: 334, width: 58, align: 'right' as const },
+    { label: 'Penalty', x: 396, width: 55, align: 'right' as const },
+    { label: 'Result', x: 455, width: 58, align: 'right' as const },
+    { label: 'Status', x: 517, width: 50, align: 'right' as const },
   ];
   const tableTop = contentTop - 17;
   page.drawRectangle({
@@ -301,12 +307,14 @@ function drawClassificationPage({
       car.number || '-',
       car.driver || `Car ${car.number || position}`,
       car.className || '-',
-      car.groupName || '-',
       String(car.laps || 0),
       car.totalTime || '-',
       car.bestLap || '-',
-      car.bestLapNumber ? String(car.bestLapNumber) : '-',
-      position === 1 ? '-' : car.gap || '-',
+      formatPenalty(car.resultAdjustment?.penaltySeconds || 0),
+      ['DNF', 'DNS', 'DQ'].includes(car.resultAdjustment?.status || '')
+        ? '-'
+        : car.adjustedBestLap || car.bestLap || '-',
+      resultStatusLabel(car.resultAdjustment),
     ];
     columns.forEach((column, cellIndex) =>
       drawCell(
@@ -316,8 +324,8 @@ function drawClassificationPage({
         rowY + 1.5,
         column.width,
         6.9,
-        cellIndex === 7 ? fonts.bold : fonts.regular,
-        cellIndex === 7 && car.bestLap ? NAVY : INK,
+        cellIndex === 8 ? fonts.bold : fonts.regular,
+        cellIndex === 8 && car.bestLap ? NAVY : INK,
         column.align,
       ),
     );
@@ -336,6 +344,51 @@ function drawClassificationPage({
       font: fonts.italic,
       color: MUTED,
     });
+  const stewardNotes = rows.filter(
+    (car) =>
+      car.resultAdjustment?.note || car.resultAdjustment?.positionOverride,
+  );
+  if (stewardNotes.length) {
+    const notesTop = tableTop - 19 - rows.length * rowHeight;
+    page.drawText('STEWARD NOTES', {
+      x: 34,
+      y: notesTop,
+      size: 6.5,
+      font: fonts.bold,
+      color: NAVY,
+    });
+    stewardNotes.slice(0, 5).forEach((car, index) => {
+      const adjustment = car.resultAdjustment!;
+      const placement = adjustment.positionOverride
+        ? `Manual position P${adjustment.positionOverride}. `
+        : '';
+      page.drawText(
+        fitText(
+          safeText(
+            `#${car.number || '-'} ${car.driver}: ${placement}${adjustment.note || 'Position set by steward.'}`,
+          ),
+          fonts.regular,
+          6.4,
+          width - 68,
+        ),
+        {
+          x: 34,
+          y: notesTop - 11 - index * 9,
+          size: 6.4,
+          font: fonts.regular,
+          color: MUTED,
+        },
+      );
+    });
+    if (stewardNotes.length > 5)
+      page.drawText(`+${stewardNotes.length - 5} more steward notes`, {
+        x: 34,
+        y: notesTop - 56,
+        size: 6.2,
+        font: fonts.italic,
+        color: MUTED,
+      });
+  }
   drawFooter(page, snapshot, pageNumber, totalPages, fonts);
 }
 
@@ -926,29 +979,98 @@ function fitText(value: string, font: PDFFont, size: number, maxWidth: number) {
   return `${text.trimEnd()}...`;
 }
 
-function rankCars(cars: ResultCar[]) {
-  const ranked = [...cars].sort((left, right) => {
-    const difference =
-      lapTimeToMilliseconds(left.bestLap) -
-      lapTimeToMilliseconds(right.bestLap);
-    return Number.isNaN(difference)
-      ? left.position - right.position
-      : difference || left.position - right.position;
+function rankCars(
+  cars: ResultCar[],
+  adjustments: Record<string, ResultAdjustment>,
+) {
+  const ranked = cars
+    .map((car) => ({
+      ...car,
+      resultAdjustment:
+        adjustments[car.registrationKey || car.registrationNumber],
+    }))
+    .sort((left, right) => {
+      const statusDifference =
+        resultStatusOrder(left.resultAdjustment?.status) -
+        resultStatusOrder(right.resultAdjustment?.status);
+      if (statusDifference) return statusDifference;
+      const difference =
+        adjustedLapMilliseconds(left) - adjustedLapMilliseconds(right);
+      return Number.isNaN(difference)
+        ? left.position - right.position
+        : difference || left.position - right.position;
+    });
+  const overrides = ranked
+    .filter((car) => car.resultAdjustment?.positionOverride)
+    .sort(
+      (left, right) =>
+        (left.resultAdjustment?.positionOverride || 0) -
+        (right.resultAdjustment?.positionOverride || 0),
+    );
+  overrides.forEach((car) => {
+    const currentIndex = ranked.indexOf(car);
+    if (currentIndex >= 0) ranked.splice(currentIndex, 1);
+    ranked.splice(
+      Math.min(
+        ranked.length,
+        Math.max(0, (car.resultAdjustment?.positionOverride || 1) - 1),
+      ),
+      0,
+      car,
+    );
   });
   const leaderTime = ranked.length
-    ? lapTimeToMilliseconds(ranked[0].bestLap)
+    ? adjustedLapMilliseconds(ranked[0])
     : Number.POSITIVE_INFINITY;
   return ranked.map((car, index) => {
-    const lapTime = lapTimeToMilliseconds(car.bestLap);
+    const lapTime = adjustedLapMilliseconds(car);
+    const hasAdjustedResult =
+      (car.resultAdjustment?.penaltySeconds || 0) > 0 &&
+      Number.isFinite(lapTime);
     return {
       ...car,
       position: index + 1,
+      adjustedBestLap: hasAdjustedResult
+        ? millisecondsToLapTime(lapTime)
+        : undefined,
       gap:
         index === 0 || !Number.isFinite(leaderTime) || !Number.isFinite(lapTime)
           ? ''
           : `+${((lapTime - leaderTime) / 1000).toFixed(3)}`,
     };
   });
+}
+
+function adjustedLapMilliseconds(car: ResultCar) {
+  if (['DNF', 'DNS', 'DQ'].includes(car.resultAdjustment?.status || ''))
+    return Number.POSITIVE_INFINITY;
+  const base = lapTimeToMilliseconds(car.bestLap);
+  return Number.isFinite(base)
+    ? base + (car.resultAdjustment?.penaltySeconds || 0) * 1_000
+    : base;
+}
+
+function resultStatusOrder(status = '') {
+  return status === 'DQ' ? 4 : status === 'DNS' ? 3 : status === 'DNF' ? 2 : 0;
+}
+
+function formatPenalty(seconds: number) {
+  return seconds > 0 ? `+${seconds.toFixed(3)}s` : '-';
+}
+
+function resultStatusLabel(adjustment?: ResultAdjustment) {
+  if (!adjustment) return '-';
+  return (
+    adjustment.status ||
+    (adjustment.penaltySeconds > 0 ? 'PENALTY' : 'ADJUSTED')
+  );
+}
+
+function millisecondsToLapTime(value: number) {
+  const totalSeconds = value / 1_000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
 }
 
 function parseSnapshot(value: string): ResultSnapshot | null {

@@ -416,6 +416,11 @@ function TimingBoard({
                           {car.car}
                         </p>
                       )}
+                      {car.resultAdjustment && (
+                        <p className="mt-1 text-xs font-semibold text-amber-300">
+                          {formatResultAdjustment(car.resultAdjustment)}
+                        </p>
+                      )}
                     </TableCell>
                     <TableCell className="hidden text-slate-300 md:table-cell">
                       {car.groupName || '—'}
@@ -433,7 +438,12 @@ function TimingBoard({
                       {car.lastLap || '—'}
                     </TableCell>
                     <TableCell className="best-lap pr-4 text-right sm:pr-5">
-                      {car.bestLap || '—'}
+                      {car.adjustedBestLap || car.bestLap || '—'}
+                      {car.adjustedBestLap && (
+                        <span className="mt-0.5 block text-[0.65rem] font-normal text-muted-foreground">
+                          raw {car.bestLap}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground xl:table-cell">
                       {car.gap || '—'}
@@ -879,6 +889,20 @@ function resultSheetHref(sessionId: string) {
   return sessionId
     ? `/api/result-sheet?session=${encodeURIComponent(sessionId)}`
     : '/api/result-sheet';
+}
+
+function formatResultAdjustment(
+  adjustment: NonNullable<TimingSnapshot['cars'][number]['resultAdjustment']>,
+) {
+  const parts = [
+    adjustment.status,
+    adjustment.penaltySeconds > 0
+      ? `+${adjustment.penaltySeconds.toFixed(3).replace(/\.0+$/, '')}s`
+      : '',
+    adjustment.positionOverride ? `placed P${adjustment.positionOverride}` : '',
+    adjustment.note,
+  ].filter(Boolean);
+  return `Steward adjustment: ${parts.join(' · ')}`;
 }
 
 function shortTime(value: string) {
