@@ -319,7 +319,7 @@ function drawClassificationPage({
     { label: 'Best Tm', x: 342, width: 53, align: 'right' as const },
     { label: 'Result', x: 400, width: 53, align: 'right' as const },
     { label: 'To prev.', x: 458, width: 49, align: 'right' as const },
-    { label: 'To lead', x: 512, width: 55, align: 'right' as const },
+    { label: 'To lead', x: 512, width: 47, align: 'right' as const },
   ];
   const tableTop = contentTop - 17;
   page.drawRectangle({
