@@ -502,7 +502,11 @@ function ScheduleView() {
             Start times, durations, and run order are from the official event
             schedule and may change at the track.
           </p>
-          <Button asChild variant="outline" size="sm">
+          <Button
+            asChild
+            size="lg"
+            className="bg-primary px-4 font-bold text-primary-foreground shadow-[0_8px_24px_rgba(244,201,68,0.2)] hover:bg-[#ffda5e] hover:text-primary-foreground focus-visible:ring-primary/60"
+          >
             <a href="/ECR-Fall-2026-Schedule.pdf" download>
               <Download aria-hidden="true" className="size-4" />
               Download official schedule
