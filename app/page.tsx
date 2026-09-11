@@ -35,16 +35,20 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-white/10 bg-[#0b0e0f]/95">
+      <header className="site-header">
+        <div className="race-ribbon">
+          <span>Official event timing</span>
+          <span className="hidden sm:inline">Canyon Classic · September 11–13, 2026</span>
+        </div>
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="grid size-11 place-items-center border border-[#d8ff3e]/35 bg-[#d8ff3e] font-mono text-sm font-black tracking-[-0.08em] text-[#0b0e0f] shadow-[4px_4px_0_#343a3d]">CVAR</div>
-            <div>
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-[#d8ff3e]">Canyon Classic</p>
-              <h1 className="text-base font-semibold tracking-tight text-white sm:text-lg">{snapshot.trackName}</h1>
+          <div className="brand-lockup">
+            <img src="/cvar-logo.png" alt="Corinthian Vintage Auto Racing" className="brand-mark" />
+            <div className="brand-copy">
+              <p>CVAR live timing</p>
+              <h1>{snapshot.trackName}</h1>
             </div>
           </div>
-          <nav aria-label="Event views" className="order-3 flex h-9 w-full items-center gap-1 sm:order-none sm:w-auto">
+          <nav aria-label="Event views" className="view-switcher order-3 flex w-full items-center sm:order-none sm:w-auto">
             <ViewTab active={activeView === 'timing'} onClick={() => setActiveView('timing')}><Radio />Live timing</ViewTab>
             <ViewTab active={activeView === 'schedule'} onClick={() => setActiveView('schedule')}><CalendarDays />Schedule</ViewTab>
           </nav>
@@ -61,7 +65,7 @@ export default function Home() {
 
 function ViewTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" aria-pressed={active} onClick={onClick} className={`relative inline-flex h-9 items-center gap-1.5 px-3 text-sm font-medium transition-colors after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-[#d8ff3e] after:transition-opacity [&_svg]:size-4 ${active ? 'text-white after:opacity-100' : 'text-zinc-400 after:opacity-0 hover:text-white'}`}>
+    <button type="button" aria-pressed={active} onClick={onClick} className={`view-tab ${active ? 'view-tab-active' : ''}`}>
       {children}
     </button>
   );
@@ -77,60 +81,73 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
 
   return (
-    <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+    <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
       {feedState === 'demo' && (
-        <div className="mb-4 flex items-start gap-3 border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-sm text-amber-100">
-          <Radio aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber-300" />
+        <div className="demo-notice">
+          <Radio aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
           <p><strong>Demo feed.</strong> The board is ready for testing; live data appears automatically after the Orbits relay and Vercel Redis are connected.</p>
         </div>
       )}
 
-      <section className="mb-4 flex flex-col gap-3 border border-white/10 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">Timing session</p>
-          <p className="mt-1 text-sm text-zinc-300">Choose Live or review a completed group session.</p>
-        </div>
-        <Select value={selectedSessionId} onValueChange={(value) => onSessionChange(value || 'live')}>
-          <SelectTrigger aria-label="Choose timing session" className="h-10 w-full min-w-64 rounded-none border-white/15 bg-black/20 text-white sm:w-auto">
-            <SelectValue>{selectedSessionId === 'live' ? `Live · ${friendlySessionName(liveSession?.runName || 'Current session')}` : friendlySessionName(selectedSession?.runName || snapshot.runName)}</SelectValue>
-          </SelectTrigger>
-          <SelectContent align="end" className="min-w-72 rounded-none border-white/10 bg-[#15191b] text-white">
-            <SelectItem value="live">Live · {friendlySessionName(liveSession?.runName || 'Current session')}</SelectItem>
-            {sessions.filter((session) => session.id !== liveSessionId).map((session) => (
-              <SelectItem key={session.id} value={session.id}>{friendlySessionName(session.runName)} · {sessionClockTime(session.startedAt)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </section>
-
-      <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(150px,0.6fr))]">
-        <div className="relative overflow-hidden border border-white/10 bg-card p-5 sm:col-span-2 lg:col-span-1">
-          <div className="absolute inset-y-0 left-0 w-1 bg-[#d8ff3e]" />
-          <p className="mb-1 font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">{snapshot.eventName} · September 11-13</p>
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 className="text-2xl font-bold tracking-[-0.03em] sm:text-3xl">{friendlySessionName(snapshot.runName)}</h2>
-            <span className="font-mono text-sm text-muted-foreground">{sessionClockText(snapshot, feedState, secondsAgo)}</span>
+      <section className="timing-hero">
+        <div className="timing-hero-content">
+          <div className="hero-kicker">
+            <span>{snapshot.eventName}</span>
+            <span className="hero-kicker-rule" />
+            <span>Sept 11–13</span>
+          </div>
+          <div className="hero-title-row">
+            <div>
+              <span className="flag-chip"><span className="flag-dot" />{snapshot.flag === 'NOT ACTIVE' ? 'Timing' : snapshot.flag}</span>
+              <h2>{friendlySessionName(snapshot.runName)}</h2>
+              <p>{snapshot.trackName} · {snapshot.trackLength}</p>
+            </div>
+            <div className="session-clock">
+              <span>Session clock</span>
+              <strong>{sessionClockText(snapshot, feedState, secondsAgo)}</strong>
+            </div>
           </div>
         </div>
+        <div className="session-picker">
+          <div>
+            <p>Timing session</p>
+            <span>Live feed or saved results</span>
+          </div>
+          <Select value={selectedSessionId} onValueChange={(value) => onSessionChange(value || 'live')}>
+            <SelectTrigger aria-label="Choose timing session" className="session-select">
+              <SelectValue>{selectedSessionId === 'live' ? `Live · ${friendlySessionName(liveSession?.runName || 'Current session')}` : friendlySessionName(selectedSession?.runName || snapshot.runName)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-72 border-white/10 bg-[#102838] text-white">
+              <SelectItem value="live">Live · {friendlySessionName(liveSession?.runName || 'Current session')}</SelectItem>
+              {sessions.filter((session) => session.id !== liveSessionId).map((session) => (
+                <SelectItem key={session.id} value={session.id}>{friendlySessionName(session.runName)} · {sessionClockTime(session.startedAt)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </section>
+
+      <section className="stats-grid">
         <Stat label="Track" value={trackPrimary(snapshot.trackLength)} detail={trackDetail(snapshot.trackLength)} />
         <Stat label="Leader" value={leader ? `#${leader.number}` : '—'} detail={leader?.bestLap || 'No timed laps'} accent />
         <Stat label="Cars timed" value={String(snapshot.cars.length)} detail="Best-lap order" />
       </section>
 
-      <section className="overflow-hidden border border-white/10 bg-card shadow-[0_18px_70px_rgba(0,0,0,0.25)]">
-        <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div><p className="text-lg font-bold tracking-tight">Best-lap classification</p><p className="mt-0.5 text-sm text-muted-foreground">Updates when each car crosses start / finish</p></div>
-          <div className="flex flex-wrap gap-2" aria-label="Filter timing by class">
+      <section className="timing-card">
+        <div className="timing-card-header">
+          <div><p className="classification-title">Best-lap classification</p><p className="mt-1 text-sm text-muted-foreground">Updates at every start / finish crossing</p></div>
+          <div className="class-filter" aria-label="Filter timing by class">
             {classes.map((className) => (
-              <Button key={className} type="button" size="sm" variant={selectedClass === className ? 'default' : 'outline'} onClick={() => setActiveClass(className)} className={selectedClass === className ? 'bg-[#d8ff3e] text-[#0b0e0f] hover:bg-[#c8ef35]' : 'border-white/15 bg-transparent text-zinc-300 hover:bg-white/5'}>{className}</Button>
+              <Button key={className} type="button" size="sm" variant={selectedClass === className ? 'default' : 'outline'} onClick={() => setActiveClass(className)} className={selectedClass === className ? 'class-filter-active' : 'class-filter-button'}>{className}</Button>
             ))}
           </div>
         </div>
 
         {cars.length > 0 ? (
-          <Table>
-            <TableHeader className="bg-black/20">
-              <TableRow className="border-white/10 hover:bg-transparent">
+          <div className="overflow-x-auto">
+          <Table className="timing-table">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
                 <TableHead className="w-16 px-4 font-mono text-xs uppercase tracking-wider text-muted-foreground sm:px-5">Pos</TableHead>
                 <TableHead className="w-20 font-mono text-xs uppercase tracking-wider text-muted-foreground">Car</TableHead>
                 <TableHead className="min-w-[210px] font-mono text-xs uppercase tracking-wider text-muted-foreground">Driver</TableHead>
@@ -145,27 +162,28 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
             </TableHeader>
             <TableBody>
               {cars.map((car) => (
-                <TableRow key={car.registrationKey || car.registrationNumber} className="border-white/10 hover:bg-white/[0.035]">
-                  <TableCell className="px-4 py-4 sm:px-5"><div className="flex items-center gap-2"><span className="font-mono text-lg font-bold tabular-nums">{car.position || '—'}</span>{car.position === 1 && <Flag aria-label="Session leader" className="size-3.5 fill-[#d8ff3e] text-[#d8ff3e]" />}</div></TableCell>
-                  <TableCell><span className="inline-grid min-w-11 place-items-center bg-white px-2 py-1 font-mono text-base font-black text-black">{car.number}</span></TableCell>
+                <TableRow key={car.registrationKey || car.registrationNumber}>
+                  <TableCell className="px-4 py-4 sm:px-5"><div className="flex items-center gap-2"><span className="position-number">{car.position || '—'}</span>{car.position === 1 && <Flag aria-label="Session leader" className="leader-flag" />}</div></TableCell>
+                  <TableCell><span className="car-number">{car.number}</span></TableCell>
                   <TableCell className="py-4"><p className="font-semibold text-white">{car.driver || `Car ${car.number}`}</p><p className="mt-0.5 text-xs text-muted-foreground md:hidden">{[car.groupName, car.className].filter(Boolean).join(' · ') || car.car}</p>{car.car && <p className="mt-0.5 hidden text-xs text-muted-foreground md:block">{car.car}</p>}</TableCell>
-                  <TableCell className="hidden text-zinc-300 md:table-cell">{car.groupName || '—'}</TableCell>
-                  <TableCell className="hidden text-zinc-300 lg:table-cell">{car.className || '—'}</TableCell>
+                  <TableCell className="hidden text-slate-300 md:table-cell">{car.groupName || '—'}</TableCell>
+                  <TableCell className="hidden text-slate-300 lg:table-cell">{car.className || '—'}</TableCell>
                   <TableCell className="text-right font-mono text-base tabular-nums">{car.laps}</TableCell>
-                  <TableCell className="hidden text-right font-mono text-base tabular-nums text-zinc-300 lg:table-cell">{car.totalTime || '—'}</TableCell>
-                  <TableCell className="hidden text-right font-mono text-base tabular-nums text-zinc-300 sm:table-cell">{car.lastLap || '—'}</TableCell>
-                  <TableCell className="pr-4 text-right font-mono text-base font-bold tabular-nums text-[#d8ff3e] sm:pr-5">{car.bestLap || '—'}</TableCell>
+                  <TableCell className="hidden text-right font-mono text-base tabular-nums text-slate-300 lg:table-cell">{car.totalTime || '—'}</TableCell>
+                  <TableCell className="hidden text-right font-mono text-base tabular-nums text-slate-300 sm:table-cell">{car.lastLap || '—'}</TableCell>
+                  <TableCell className="best-lap pr-4 text-right sm:pr-5">{car.bestLap || '—'}</TableCell>
                   <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground xl:table-cell">{car.gap || '—'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          </div>
         ) : (
           <div className="grid min-h-64 place-items-center p-8 text-center"><div><Flag className="mx-auto mb-3 size-7 text-muted-foreground" /><p className="font-semibold">Waiting for the first timed car</p><p className="mt-1 text-sm text-muted-foreground">Cars appear here after crossing start / finish.</p></div></div>
         )}
       </section>
 
-      <footer className="mt-4 flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <footer className="timing-footer">
         <span className="flex items-center gap-2"><RotateCcw aria-hidden="true" className="size-3.5" /> {feedState === 'demo' ? 'Showing rehearsal data' : feedState === 'history' ? 'Viewing saved session results' : `Updated ${secondsAgo < 2 ? 'just now' : `${secondsAgo} seconds ago`}`}</span>
         <span>Unofficial timing · Results are final only after steward review</span>
       </footer>
@@ -176,23 +194,23 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
 function ScheduleView() {
   return (
     <div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <div className="mb-6 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div><p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-[#d8ff3e]">September 11-13, 2026</p><h2 className="mt-1 text-3xl font-bold tracking-[-0.035em] text-white">Canyon Classic at ECR</h2></div>
+      <div className="schedule-intro">
+        <div><p className="eyebrow">September 11–13, 2026</p><h2>Canyon Classic at ECR</h2></div>
         <p className="max-w-md text-sm text-muted-foreground">Times and run order are from the organizer schedule and may change at the track. Listen for grid calls by text, PA, and 464.5000.</p>
       </div>
 
       <div className="grid items-start gap-4 lg:grid-cols-3">
         {eventSchedule.map((day) => (
-          <section key={day.day} className="overflow-hidden border border-white/10 bg-card">
-            <header className="flex items-baseline justify-between border-b border-white/10 bg-black/20 px-5 py-4"><h3 className="text-xl font-bold text-white">{day.day}</h3><span className="font-mono text-sm text-[#d8ff3e]">{day.date}</span></header>
-            <div className="divide-y divide-white/10">
+          <section key={day.day} className="schedule-day">
+            <header><div><span>Race day</span><h3>{day.day}</h3></div><time>{day.date}</time></header>
+            <div className="schedule-list">
               {day.items.map((item, index) => <ScheduleRow key={`${day.day}-${item.title}-${index}`} item={item} />)}
             </div>
           </section>
         ))}
       </div>
 
-      <div className="mt-4 border border-white/10 bg-card px-5 py-4 text-sm text-muted-foreground"><strong className="text-zinc-200">Screaming Eagles:</strong> Spec Boxster, Spec Miata, and Toyota GR86.</div>
+      <div className="schedule-note"><strong>Screaming Eagles:</strong> Spec Boxster, Spec Miata, and Toyota GR86.</div>
     </div>
   );
 }
@@ -200,11 +218,11 @@ function ScheduleView() {
 function ScheduleRow({ item }: { item: ScheduleItem }) {
   const Icon = item.kind === 'meeting' ? Users : item.kind === 'break' ? Clock3 : TimerReset;
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 px-5 py-4">
-      <Icon aria-hidden="true" className={`mt-0.5 size-4 ${item.kind === 'track' ? 'text-[#d8ff3e]' : 'text-muted-foreground'}`} />
+    <div className={`schedule-row schedule-row-${item.kind || 'track'}`}>
+      <Icon aria-hidden="true" className="mt-0.5 size-4" />
       <div>
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="font-semibold text-white">{item.title}</p>{item.time && <time className="font-mono text-sm text-zinc-300">{item.time}</time>}</div>
-        {item.duration && <p className="mt-1 font-mono text-xs uppercase tracking-wider text-[#d8ff3e]">{item.duration}</p>}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="font-semibold text-white">{item.title}</p>{item.time && <time className="font-mono text-sm text-slate-300">{item.time}</time>}</div>
+        {item.duration && <p className="schedule-duration">{item.duration}</p>}
         {item.groups && <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.groups.join(' · ')}</p>}
         {item.note && <p className="mt-2 text-sm leading-5 text-muted-foreground">{item.note}</p>}
       </div>
@@ -269,14 +287,14 @@ function useLiveTiming() {
 }
 
 function FeedBadge({ state }: { state: FeedState }) {
-  if (state === 'live') return <div className="flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-300"><Radio aria-hidden="true" className="size-4" /><span className="hidden sm:inline">Timing feed live</span><span className="sm:hidden">Live</span></div>;
-  if (state === 'history') return <div className="flex items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-300"><Clock3 aria-hidden="true" className="size-4" /><span className="hidden sm:inline">Past session</span><span className="sm:hidden">Past</span></div>;
-  if (state === 'stale') return <div className="flex items-center gap-2 rounded-full border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm font-semibold text-red-300"><WifiOff aria-hidden="true" className="size-4" /><span className="hidden sm:inline">Feed delayed</span><span className="sm:hidden">Delayed</span></div>;
-  return <div className="flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-200"><Radio aria-hidden="true" className="size-4" /><span className="hidden sm:inline">Demo mode</span><span className="sm:hidden">Demo</span></div>;
+  if (state === 'live') return <div className="feed-badge feed-live"><Radio aria-hidden="true" /><span className="hidden sm:inline">Timing feed live</span><span className="sm:hidden">Live</span></div>;
+  if (state === 'history') return <div className="feed-badge feed-history"><Clock3 aria-hidden="true" /><span className="hidden sm:inline">Past session</span><span className="sm:hidden">Past</span></div>;
+  if (state === 'stale') return <div className="feed-badge feed-stale"><WifiOff aria-hidden="true" /><span className="hidden sm:inline">Feed delayed</span><span className="sm:hidden">Delayed</span></div>;
+  return <div className="feed-badge feed-demo"><Radio aria-hidden="true" /><span className="hidden sm:inline">Demo mode</span><span className="sm:hidden">Demo</span></div>;
 }
 
 function Stat({ label, value, detail, accent = false }: { label: string; value: string; detail: string; accent?: boolean }) {
-  return <div className="border border-white/10 bg-card p-4"><p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">{label}</p><p className={`mt-2 font-mono text-2xl font-bold tracking-tight ${accent ? 'text-[#d8ff3e]' : 'text-white'}`}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>;
+  return <div className={`stat-card ${accent ? 'stat-card-accent' : ''}`}><p>{label}</p><strong>{value}</strong><span>{detail}</span></div>;
 }
 
 function sessionClockText(snapshot: TimingSnapshot, feedState: FeedState, secondsAgo: number) {
