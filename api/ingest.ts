@@ -5,7 +5,10 @@ import { redisCommand, redisIsConfigured, redisPipeline } from './_redis.js';
 type TimingSnapshotInput = {
   eventName: string;
   trackName: string;
+  runId?: string;
   runName: string;
+  flag?: string;
+  groups?: unknown[];
   updatedAt: string;
   cars: unknown[];
 };
@@ -77,7 +80,16 @@ async function storeEnvelope(envelope: IngestEnvelope) {
   const timestamp = Date.parse(envelope.snapshot.updatedAt) || Date.now();
   const commands: Array<Array<string | number>> = [
     ['SET', 'cvar:live', JSON.stringify(envelope.snapshot)],
+    ['SET', 'cvar:live-session', envelope.sessionId],
     ['SET', `${sessionPrefix}:latest`, JSON.stringify(envelope.snapshot)],
+    ['HSET', `${eventPrefix}:session-summaries`, envelope.sessionId, JSON.stringify({
+      runId: envelope.snapshot.runId || '',
+      runName: envelope.snapshot.runName,
+      flag: envelope.snapshot.flag || '',
+      groups: Array.isArray(envelope.snapshot.groups) ? envelope.snapshot.groups.filter((group): group is string => typeof group === 'string') : [],
+      carCount: envelope.snapshot.cars.length,
+      updatedAt: envelope.snapshot.updatedAt,
+    })],
   ];
 
   if (envelope.sessionChanged) {
