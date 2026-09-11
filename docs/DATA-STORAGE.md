@@ -29,4 +29,6 @@ Authorization: Bearer CVAR_INGEST_SECRET
 
 The event response lists sessions and registrations. The session response contains its latest classification, ordered lap passings, and raw-record count. Add `raw=1` to retrieve the private protocol archive in pages of at most 500 records. A future transponder-sheet importer can enrich or correct the same event registration map without changing the live feed.
 
+Timing staff use `/control`, which is protected by `CVAR_ADMIN_PASSWORD`. A successful login receives an eight-hour, HTTP-only, secure, same-site session cookie signed with `CVAR_INGEST_SECRET`; the password is never saved in browser storage. Login attempts are rate-limited through Redis. The page merges private registration/transponder records with the current standings and provides protected links to each session's passings and paginated raw archive. Set a separate strong control-room password rather than reusing the relay secret.
+
 The Orbits Processing screen can show post-processing fields that are not part of the RMonitor scoreboard stream, including result status, uploaded state, points, and some corrections. Preserve those after a session by exporting the results and lap-time files from Orbits; they can be imported alongside the live archive later.

@@ -106,6 +106,8 @@ npm run record
 
 Stop it with Ctrl+C. Recordings are saved under `recordings/`, which Git ignores because the files can include driver names and transponder identifiers. The normal relay also keeps a raw local backup by default while sending parsed timing, CVAR group, class, session metadata, and the raw protocol stream to the private cloud archive. See the [data storage notes](docs/DATA-STORAGE.md) and [meeting checklist](docs/MEETING-CHECKLIST.md).
 
+Timing staff can use `/control` for the private roster and archive. It requires the separate `CVAR_ADMIN_PASSWORD` server setting and never exposes transponder or registration records through the public live-timing endpoint.
+
 ## Rehearse without the timing hardware
 
 Use two terminal windows. In the first:
