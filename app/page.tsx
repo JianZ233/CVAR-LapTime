@@ -74,6 +74,7 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
   const cars = useMemo(() => selectedClass === 'All cars' ? snapshot.cars : snapshot.cars.filter((car) => car.className === selectedClass), [selectedClass, snapshot.cars]);
   const leader = snapshot.cars[0];
   const liveSession = sessions.find((session) => session.id === liveSessionId);
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId);
 
   return (
     <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
@@ -91,7 +92,7 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
         </div>
         <Select value={selectedSessionId} onValueChange={(value) => onSessionChange(value || 'live')}>
           <SelectTrigger aria-label="Choose timing session" className="h-10 w-full min-w-64 rounded-none border-white/15 bg-black/20 text-white sm:w-auto">
-            <SelectValue />
+            <SelectValue>{selectedSessionId === 'live' ? `Live · ${friendlySessionName(liveSession?.runName || 'Current session')}` : friendlySessionName(selectedSession?.runName || snapshot.runName)}</SelectValue>
           </SelectTrigger>
           <SelectContent align="end" className="min-w-72 rounded-none border-white/10 bg-[#15191b] text-white">
             <SelectItem value="live">Live · {friendlySessionName(liveSession?.runName || 'Current session')}</SelectItem>
@@ -280,6 +281,8 @@ function Stat({ label, value, detail, accent = false }: { label: string; value: 
 
 function sessionClockText(snapshot: TimingSnapshot, feedState: FeedState, secondsAgo: number) {
   if (feedState === 'history') return snapshot.raceTime ? `${shortTime(snapshot.raceTime)} elapsed` : 'Completed session';
+  if (['FINISH', 'FINISHED', 'CHECKERED', 'CHEQUERED'].includes(snapshot.flag)) return snapshot.raceTime ? `Finished · ${shortTime(snapshot.raceTime)} elapsed` : 'Session finished';
+  if (snapshot.flag === 'NOT ACTIVE') return 'Session not active';
   if (snapshot.timeToGo) {
     const shouldTick = feedState === 'live' && ['GREEN', 'YELLOW'].includes(snapshot.flag);
     return `${shouldTick ? countdownTime(snapshot.timeToGo, secondsAgo) : shortTime(snapshot.timeToGo)} remaining`;
