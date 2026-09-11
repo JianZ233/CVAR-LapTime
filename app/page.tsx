@@ -14,7 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { eventSchedule, type ScheduleItem } from '@/lib/schedule';
-import { demoSnapshot, isTimingSnapshot, type TimingSnapshot } from '@/lib/timing';
+import { demoSnapshot, isTimingSnapshot, rankSnapshotByBestLap, type TimingSnapshot } from '@/lib/timing';
 
 type FeedState = 'demo' | 'live' | 'stale' | 'history';
 
@@ -114,12 +114,12 @@ function TimingBoard({ snapshot, feedState, secondsAgo, sessions, liveSessionId,
         </div>
         <Stat label="Track" value={trackPrimary(snapshot.trackLength)} detail={trackDetail(snapshot.trackLength)} />
         <Stat label="Leader" value={leader ? `#${leader.number}` : '—'} detail={leader?.bestLap || 'No timed laps'} accent />
-        <Stat label="Cars timed" value={String(snapshot.cars.length)} detail={snapshot.sessionMode === 'race' ? 'Race order' : 'Best-lap order'} />
+        <Stat label="Cars timed" value={String(snapshot.cars.length)} detail="Best-lap order" />
       </section>
 
       <section className="overflow-hidden border border-white/10 bg-card shadow-[0_18px_70px_rgba(0,0,0,0.25)]">
         <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div><p className="text-lg font-bold tracking-tight">{snapshot.sessionMode === 'race' ? 'Race classification' : 'Overall classification'}</p><p className="mt-0.5 text-sm text-muted-foreground">Updates when each car crosses start / finish</p></div>
+          <div><p className="text-lg font-bold tracking-tight">Best-lap classification</p><p className="mt-0.5 text-sm text-muted-foreground">Updates when each car crosses start / finish</p></div>
           <div className="flex flex-wrap gap-2" aria-label="Filter timing by class">
             {classes.map((className) => (
               <Button key={className} type="button" size="sm" variant={selectedClass === className ? 'default' : 'outline'} onClick={() => setActiveClass(className)} className={selectedClass === className ? 'bg-[#d8ff3e] text-[#0b0e0f] hover:bg-[#c8ef35]' : 'border-white/15 bg-transparent text-zinc-300 hover:bg-white/5'}>{className}</Button>
@@ -251,7 +251,7 @@ function useLiveTiming() {
         if (!isTimingSnapshot(body.snapshot)) throw new Error('Invalid timing snapshot');
         if (cancelled) return;
         hasReceivedData.current = true;
-        setSnapshot(body.snapshot);
+        setSnapshot(rankSnapshotByBestLap(body.snapshot));
         setFeedState(selectedSessionId === 'live' ? (Date.now() - new Date(body.snapshot.updatedAt).getTime() > 15_000 ? 'stale' : 'live') : 'history');
       } catch {
         if (!cancelled && hasReceivedData.current) setFeedState('stale');

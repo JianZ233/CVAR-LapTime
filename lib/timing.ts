@@ -83,3 +83,37 @@ export function isTimingSnapshot(value: unknown): value is TimingSnapshot {
     snapshot.cars.length <= 500
   );
 }
+
+export function rankSnapshotByBestLap(snapshot: TimingSnapshot): TimingSnapshot {
+  const ranked = [...snapshot.cars].sort((left, right) => {
+    const leftTime = lapTimeToMilliseconds(left.bestLap);
+    const rightTime = lapTimeToMilliseconds(right.bestLap);
+    if (leftTime !== rightTime) return leftTime - rightTime;
+    return left.position - right.position;
+  });
+  const leaderTime = ranked.length ? lapTimeToMilliseconds(ranked[0].bestLap) : Number.POSITIVE_INFINITY;
+
+  return {
+    ...snapshot,
+    cars: ranked.map((car, index) => {
+      const carTime = lapTimeToMilliseconds(car.bestLap);
+      const hasGap = Number.isFinite(leaderTime) && Number.isFinite(carTime);
+      return {
+        ...car,
+        position: index + 1,
+        gap: index === 0 ? '—' : hasGap ? `+${((carTime - leaderTime) / 1000).toFixed(3)}` : '',
+      };
+    }),
+  };
+}
+
+function lapTimeToMilliseconds(value: string) {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const parts = value.split(':');
+  const seconds = Number(parts.pop());
+  if (!Number.isFinite(seconds)) return Number.POSITIVE_INFINITY;
+  const minutes = Number(parts.pop() || 0);
+  const hours = Number(parts.pop() || 0);
+  if (!Number.isFinite(minutes) || !Number.isFinite(hours)) return Number.POSITIVE_INFINITY;
+  return ((hours * 60 + minutes) * 60 + seconds) * 1000;
+}

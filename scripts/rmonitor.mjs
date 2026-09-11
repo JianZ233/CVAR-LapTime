@@ -299,10 +299,9 @@ export function createTimingState(options = {}) {
     const ordered = [...competitors.values()]
       .filter((car) => car.racePosition || car.practicePosition || car.lastLapMs !== null)
       .sort((a, b) => {
-        const aPosition = a[positionKey] || Number.MAX_SAFE_INTEGER;
-        const bPosition = b[positionKey] || Number.MAX_SAFE_INTEGER;
-        if (aPosition !== bPosition) return aPosition - bPosition;
-        return (a.bestLapMs ?? Number.MAX_SAFE_INTEGER) - (b.bestLapMs ?? Number.MAX_SAFE_INTEGER);
+        const bestLapDifference = (a.bestLapMs ?? Number.MAX_SAFE_INTEGER) - (b.bestLapMs ?? Number.MAX_SAFE_INTEGER);
+        if (bestLapDifference !== 0) return bestLapDifference;
+        return (a[positionKey] || Number.MAX_SAFE_INTEGER) - (b[positionKey] || Number.MAX_SAFE_INTEGER);
       });
     const leader = ordered[0];
 
@@ -337,7 +336,7 @@ export function createTimingState(options = {}) {
         groupName: car.groupName,
         classNumber: car.classNumber,
         className: classNameFor(car.classNumber),
-        position: car[positionKey] || index + 1,
+        position: index + 1,
         laps: car.laps,
         bestLapNumber: car.bestLapNumber,
         latestLapNumber: car.latestLapNumber,
@@ -346,7 +345,7 @@ export function createTimingState(options = {}) {
         totalTime: formatLapTime(car.totalTimeMs),
         lastLap: formatLapTime(car.lastLapMs),
         bestLap: formatLapTime(car.bestLapMs),
-        gap: formatGap(sessionMode, leader, car),
+        gap: formatGap(leader, car),
       })),
     };
   }
@@ -404,14 +403,9 @@ export function formatLapTime(milliseconds) {
   return hours ? `${hours}:${body}` : body;
 }
 
-function formatGap(mode, leader, car) {
+function formatGap(leader, car) {
   if (!leader || leader === car) return '—';
-  if (mode === 'practice' && leader.bestLapMs !== null && car.bestLapMs !== null) return `+${((car.bestLapMs - leader.bestLapMs) / 1000).toFixed(3)}`;
-  if (mode === 'race') {
-    const lapDifference = leader.laps - car.laps;
-    if (lapDifference > 0) return `${lapDifference} lap${lapDifference === 1 ? '' : 's'}`;
-    if (leader.totalTimeMs !== null && car.totalTimeMs !== null) return `+${Math.max(0, (car.totalTimeMs - leader.totalTimeMs) / 1000).toFixed(3)}`;
-  }
+  if (leader.bestLapMs !== null && car.bestLapMs !== null) return `+${((car.bestLapMs - leader.bestLapMs) / 1000).toFixed(3)}`;
   return '';
 }
 

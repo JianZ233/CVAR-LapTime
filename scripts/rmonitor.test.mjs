@@ -97,3 +97,19 @@ test('preserves duplicate Orbits registration numbers as separate competitors', 
   assert.equal(cars[1].bestLap, '');
   assert.deepEqual(state.registrations().map((registration) => [registration.registrationKey, registration.transponderId]), [['64', '1803412'], ['64#2', '212990']]);
 });
+
+test('ranks race sessions by best lap instead of total time', () => {
+  const state = createTimingState({ sessionMode: 'race', streamId: 'best-lap-ranking' });
+  [
+    '$G,1,"R1",8,"00:16:00.000"',
+    '$G,2,"R2",8,"00:16:10.000"',
+    '$H,1,"R1",4,"00:02:03.000"',
+    '$H,2,"R2",6,"00:02:01.500"',
+  ].forEach((line) => state.apply(line));
+
+  const cars = state.snapshot().cars;
+  assert.deepEqual(cars.map((car) => [car.registrationNumber, car.position, car.gap]), [
+    ['R2', 1, '—'],
+    ['R1', 2, '+1.500'],
+  ]);
+});
