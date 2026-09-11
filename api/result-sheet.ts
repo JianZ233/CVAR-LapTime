@@ -23,6 +23,8 @@ type ResultCar = {
   totalTime: string;
   bestLap: string;
   gap: string;
+  gapToPrevious?: string;
+  gapToLeader?: string;
   adjustedBestLap?: string;
   resultAdjustment?: ResultAdjustment;
 };
@@ -277,14 +279,16 @@ function drawClassificationPage({
     logo,
   });
   const columns = [
-    { label: 'Pos', x: 34, width: 28, align: 'right' as const },
-    { label: 'No.', x: 68, width: 34, align: 'left' as const },
-    { label: 'Driver', x: 108, width: 134, align: 'left' as const },
-    { label: 'Class', x: 248, width: 66, align: 'left' as const },
-    { label: 'Laps', x: 320, width: 34, align: 'right' as const },
-    { label: 'Total time', x: 360, width: 76, align: 'right' as const },
-    { label: 'Best Tm', x: 442, width: 58, align: 'right' as const },
-    { label: 'Result', x: 506, width: 61, align: 'right' as const },
+    { label: 'Pos', x: 34, width: 22, align: 'right' as const },
+    { label: 'No.', x: 61, width: 27, align: 'left' as const },
+    { label: 'Driver', x: 93, width: 98, align: 'left' as const },
+    { label: 'Class', x: 196, width: 41, align: 'left' as const },
+    { label: 'Laps', x: 242, width: 28, align: 'right' as const },
+    { label: 'Total time', x: 275, width: 62, align: 'right' as const },
+    { label: 'Best Tm', x: 342, width: 53, align: 'right' as const },
+    { label: 'Result', x: 400, width: 53, align: 'right' as const },
+    { label: 'To prev.', x: 458, width: 49, align: 'right' as const },
+    { label: 'To lead', x: 512, width: 55, align: 'right' as const },
   ];
   const tableTop = contentTop - 17;
   page.drawRectangle({
@@ -331,6 +335,8 @@ function drawClassificationPage({
       ['DNF', 'DNS', 'DQ'].includes(car.resultAdjustment?.status || '')
         ? '-'
         : car.adjustedBestLap || car.bestLap || '-',
+      car.gapToPrevious || '-',
+      car.gapToLeader || '-',
     ];
     columns.forEach((column, cellIndex) =>
       drawCell(
@@ -655,7 +661,9 @@ function drawLapChartPage({
     31,
     (width - 32 - chartStart) / Math.max(1, chartColumns.length),
   );
-  const rowCount = Math.max(cars.length, firstOrder.length);
+  const rowCount = passings.length
+    ? Math.max(cars.length, firstOrder.length)
+    : 0;
   const rowHeight = Math.min(13.5, 435 / Math.max(1, rowCount));
   const fontSize = Math.max(5.5, Math.min(6.8, rowHeight - 4.8));
   page.drawText('Competitors', {
@@ -1114,6 +1122,10 @@ function rankCars(
     : Number.POSITIVE_INFINITY;
   return ranked.map((car, index) => {
     const lapTime = adjustedLapMilliseconds(car);
+    const previousTime =
+      index > 0
+        ? adjustedLapMilliseconds(ranked[index - 1])
+        : Number.POSITIVE_INFINITY;
     const hasAdjustedResult =
       (car.resultAdjustment?.penaltySeconds || 0) > 0 &&
       Number.isFinite(lapTime);
@@ -1123,12 +1135,22 @@ function rankCars(
       adjustedBestLap: hasAdjustedResult
         ? millisecondsToLapTime(lapTime)
         : undefined,
-      gap:
+      gapToPrevious:
+        index === 0 ||
+        !Number.isFinite(previousTime) ||
+        !Number.isFinite(lapTime)
+          ? ''
+          : formatGap(lapTime - previousTime),
+      gapToLeader:
         index === 0 || !Number.isFinite(leaderTime) || !Number.isFinite(lapTime)
           ? ''
-          : `+${((lapTime - leaderTime) / 1000).toFixed(3)}`,
+          : formatGap(lapTime - leaderTime),
     };
   });
+}
+
+function formatGap(milliseconds: number) {
+  return `+${(milliseconds / 1_000).toFixed(3)}`;
 }
 
 function adjustedLapMilliseconds(car: ResultCar) {
