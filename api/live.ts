@@ -1,4 +1,4 @@
-import { redisCommand, redisIsConfigured } from './_redis';
+import { redisCommand, redisIsConfigured } from './_redis.js';
 
 export function GET() {
   if (!redisIsConfigured()) {

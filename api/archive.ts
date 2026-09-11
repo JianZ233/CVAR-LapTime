@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { redisCommand, redisIsConfigured } from './_redis';
+import { redisCommand, redisIsConfigured } from './_redis.js';
 
 export async function GET(request: Request) {
   if (!authorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401 });

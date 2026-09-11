@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { redisCommand, redisIsConfigured, redisPipeline } from './_redis';
+import { redisCommand, redisIsConfigured, redisPipeline } from './_redis.js';
 
 type TimingSnapshotInput = {
   eventName: string;
