@@ -277,16 +277,14 @@ function drawClassificationPage({
     logo,
   });
   const columns = [
-    { label: 'Pos', x: 34, width: 24, align: 'right' as const },
-    { label: 'No.', x: 62, width: 28, align: 'left' as const },
-    { label: 'Driver', x: 94, width: 88, align: 'left' as const },
-    { label: 'Class', x: 186, width: 44, align: 'left' as const },
-    { label: 'Laps', x: 234, width: 27, align: 'right' as const },
-    { label: 'Total time', x: 265, width: 65, align: 'right' as const },
-    { label: 'Best Tm', x: 334, width: 58, align: 'right' as const },
-    { label: 'Penalty', x: 396, width: 55, align: 'right' as const },
-    { label: 'Result', x: 455, width: 58, align: 'right' as const },
-    { label: 'Status', x: 517, width: 50, align: 'right' as const },
+    { label: 'Pos', x: 34, width: 28, align: 'right' as const },
+    { label: 'No.', x: 68, width: 34, align: 'left' as const },
+    { label: 'Driver', x: 108, width: 134, align: 'left' as const },
+    { label: 'Class', x: 248, width: 66, align: 'left' as const },
+    { label: 'Laps', x: 320, width: 34, align: 'right' as const },
+    { label: 'Total time', x: 360, width: 76, align: 'right' as const },
+    { label: 'Best Tm', x: 442, width: 58, align: 'right' as const },
+    { label: 'Result', x: 506, width: 61, align: 'right' as const },
   ];
   const tableTop = contentTop - 17;
   page.drawRectangle({
@@ -330,11 +328,9 @@ function drawClassificationPage({
       String(car.laps || 0),
       car.totalTime || '-',
       car.bestLap || '-',
-      formatPenalty(car.resultAdjustment?.penaltySeconds || 0),
       ['DNF', 'DNS', 'DQ'].includes(car.resultAdjustment?.status || '')
         ? '-'
         : car.adjustedBestLap || car.bestLap || '-',
-      resultStatusLabel(car.resultAdjustment),
     ];
     columns.forEach((column, cellIndex) =>
       drawCell(
@@ -344,8 +340,8 @@ function drawClassificationPage({
         rowY + 1.5,
         column.width,
         6.9,
-        cellIndex === 8 ? fonts.bold : fonts.regular,
-        cellIndex === 8 && car.bestLap ? NAVY : INK,
+        cellIndex === 7 ? fonts.bold : fonts.regular,
+        cellIndex === 7 && car.bestLap ? NAVY : INK,
         column.align,
       ),
     );
@@ -1169,14 +1165,6 @@ function defaultAdjustmentNote(adjustment: ResultAdjustment) {
   if (adjustment.status) return 'Status set by steward.';
   if (adjustment.penaltySeconds > 0) return 'Time penalty applied.';
   return 'Steward adjustment recorded.';
-}
-
-function resultStatusLabel(adjustment?: ResultAdjustment) {
-  if (!adjustment) return '-';
-  return (
-    adjustment.status ||
-    (adjustment.penaltySeconds > 0 ? 'PENALTY' : 'ADJUSTED')
-  );
 }
 
 function millisecondsToLapTime(value: number) {
