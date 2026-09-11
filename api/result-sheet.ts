@@ -1293,6 +1293,8 @@ function formatTrackDistance(value: string) {
 }
 
 function formatSessionName(value: string) {
+  const wheelSession = wheelSessionName(value);
+  if (wheelSession) return wheelSession;
   const match = value.match(/^Gp([0-9,]+)-([^=]+)(?:=(.+))?$/i);
   if (!match) return safeText(value);
   const groups = match[1].split(',');
@@ -1305,6 +1307,18 @@ function formatSessionName(value: string) {
     .replace(/^R(\d+)$/i, 'Race $1')
     .replace(/^PQ$/i, 'Practice / Qualifying');
   return `${groupLabel} - ${sessionLabel}`;
+}
+
+function wheelSessionName(value: string) {
+  const explicitName = value.match(/=(Open|Closed)\s+Wheel\s*$/i)?.[1];
+  if (explicitName)
+    return `${explicitName[0].toUpperCase()}${explicitName.slice(1).toLowerCase()} Wheel`;
+  const code = value.match(/(?:^|[-_=])(OW|CW)(?:$|[-_=])/i)?.[1];
+  return code?.toUpperCase() === 'OW'
+    ? 'Open Wheel'
+    : code?.toUpperCase() === 'CW'
+      ? 'Closed Wheel'
+      : '';
 }
 
 function formatDate(value: string) {
