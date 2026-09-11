@@ -2,19 +2,22 @@ import net from 'node:net';
 
 const port = Number(process.env.ORBITS_PORT || 50000);
 const cars = [
-  { reg: 'CVAR65', number: '65', first: 'Sam', last: 'LeComte', model: '1965 Lotus 23B', classNumber: 7, base: 120_871 },
-  { reg: 'CVAR14', number: '14', first: 'Morgan', last: 'Ellis', model: '1972 Porsche 914', classNumber: 7, base: 121_442 },
-  { reg: 'CVAR42', number: '42', first: 'Alex', last: 'Rivera', model: '1967 Alfa Romeo GTV', classNumber: 2, base: 122_205 },
+  { reg: 'CVAR65', number: '65', first: 'Sam', last: 'LeComte', model: '1965 Lotus 23B', group: '6', classNumber: 1, base: 120_871 },
+  { reg: 'CVAR14', number: '14', first: 'Morgan', last: 'Ellis', model: '1972 Porsche 914', group: '6', classNumber: 2, base: 121_442 },
+  { reg: 'CVAR42', number: '42', first: 'Alex', last: 'Rivera', model: '1967 Alfa Romeo GTV', group: '6', classNumber: 3, base: 122_205 },
 ];
 
 const server = net.createServer((socket) => {
   console.log('Relay connected to the simulated Orbits feed.');
   socket.write('$I,"09:00:00.000","05 sep 26"\r\n');
   socket.write('$B,1,"Groups 2 & 7 Test & Tune"\r\n');
-  socket.write('$C,2,"Group 2"\r\n$C,7,"Group 7"\r\n');
+  socket.write('$C,1,"FF2"\r\n$C,2,"FF1"\r\n$C,3,"FF3"\r\n');
   socket.write('$E,"TRACKNAME","Eagles Canyon Raceway"\r\n');
   socket.write('$E,"TRACKLENGTH","2.7 mi · 15 turns"\r\n');
-  cars.forEach((car) => socket.write(`$A,"${car.reg}","${car.number}",${10000 + Number(car.number)},"${car.first}","${car.last}","${car.model}",${car.classNumber}\r\n`));
+  cars.forEach((car) => {
+    socket.write(`$A,"${car.reg}","${car.number}",${10000 + Number(car.number)},"${car.first}","${car.last}","${car.group}",${car.classNumber}\r\n`);
+    socket.write(`$COMP,"${car.reg}","${car.number}",${car.classNumber},"${car.first}","${car.last}","${car.group}","${car.model}"\r\n`);
+  });
 
   let lap = 0;
   const best = new Map();

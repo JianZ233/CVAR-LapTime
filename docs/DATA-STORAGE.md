@@ -7,17 +7,26 @@ Upstash Redis stores:
 - the latest public classification;
 - the latest classification for every detected session;
 - every unique `$J` lap passing, including lap and total time;
-- car number, driver, car, class, registration identifier, and transponder assignment; and
+- the Orbits run ID and name, CVAR group, racing class, best-lap number, scoreboard position, session clocks, flag state, and track settings;
+- car number, driver, first and last name, the source nationality/group field, additional competitor info, class identifier, registration identifier, and transponder assignment;
+- every raw RMonitor record, including unrecognized commands, so later parser improvements can recover fields that are not understood yet; and
 - an event index and session start times.
 
-There is no automatic expiration on archived sessions or passings. Repeated `$F`, `$G`, and `$H` scoreboard refreshes update the current classification instead of creating duplicate history records. Raw RMonitor recordings remain local and Git-ignored because they can contain personal data.
+There is no automatic expiration on archived sessions, passings, or raw records. Repeated `$F`, `$G`, and `$H` scoreboard refreshes update the current classification, while their original protocol lines remain available in the private raw archive. The relay also writes a second raw backup under `recordings/` by default. This directory is Git-ignored because the files can contain driver names, transponder identifiers, and other registration data.
+
+The feed's `$A` and `$COMP` field called “nationality” contains CVAR's group number in the tested event (`6` means `Group 6`). `$C` records are a separate class table (`FF1`, `FF2`, `FC`, and so on). The public timing board displays them separately instead of treating the group as a car description.
+
+Orbits may publish the same registration number for more than one named driver. The parser keeps each different driver/transponder as a separate competitor and assigns display suffixes (`64`, `64a`, `64b`) when the transmitted car numbers collide. The original transmitted number remains in `sourceNumber` in the private registration and passing archives.
 
 The archive API is intentionally private. Send the same bearer secret used by the relay:
 
 ```text
 GET /api/archive?event=canyon-classic-2026
 GET /api/archive?event=canyon-classic-2026&session=SESSION_ID
+GET /api/archive?event=canyon-classic-2026&session=SESSION_ID&raw=1&offset=0&limit=200
 Authorization: Bearer CVAR_INGEST_SECRET
 ```
 
-The event response lists sessions and registrations. The session response contains its latest classification and ordered lap passings. A future transponder-sheet importer can upsert corrections into the same event registration map without changing the live feed.
+The event response lists sessions and registrations. The session response contains its latest classification, ordered lap passings, and raw-record count. Add `raw=1` to retrieve the private protocol archive in pages of at most 500 records. A future transponder-sheet importer can enrich or correct the same event registration map without changing the live feed.
+
+The Orbits Processing screen can show post-processing fields that are not part of the RMonitor scoreboard stream, including result status, uploaded state, points, and some corrections. Preserve those after a session by exporting the results and lap-time files from Orbits; they can be imported alongside the live archive later.

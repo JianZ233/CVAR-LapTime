@@ -104,7 +104,7 @@ During a short test session, capture the exact feed sent by CVAR's Orbits setup:
 npm run record
 ```
 
-Stop it with Ctrl+C. Recordings are saved under `recordings/`, which Git ignores because the files can include driver names and transponder identifiers. See the [meeting checklist](docs/MEETING-CHECKLIST.md) for the questions and acceptance test.
+Stop it with Ctrl+C. Recordings are saved under `recordings/`, which Git ignores because the files can include driver names and transponder identifiers. The normal relay also keeps a raw local backup by default while sending parsed timing, CVAR group, class, session metadata, and the raw protocol stream to the private cloud archive. See the [data storage notes](docs/DATA-STORAGE.md) and [meeting checklist](docs/MEETING-CHECKLIST.md).
 
 ## Rehearse without the timing hardware
 

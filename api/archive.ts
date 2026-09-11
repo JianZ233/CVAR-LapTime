@@ -12,8 +12,12 @@ export async function GET(request: Request) {
   if (!safeId(eventId) || (sessionId && !safeId(sessionId))) return Response.json({ error: 'Invalid event or session identifier' }, { status: 400 });
 
   try {
-    if (!sessionId) return listEvent(eventId);
-    return readSession(eventId, sessionId);
+    if (!sessionId) return await listEvent(eventId);
+    return await readSession(eventId, sessionId, {
+      includeRaw: url.searchParams.get('raw') === '1',
+      offset: boundedInteger(url.searchParams.get('offset'), 0, 1_000_000, 0),
+      limit: boundedInteger(url.searchParams.get('limit'), 1, 500, 200),
+    });
   } catch (error) {
     console.error('Unable to read timing archive', error);
     return Response.json({ error: 'Unable to read timing archive' }, { status: 502 });
@@ -31,19 +35,25 @@ async function listEvent(eventId: string) {
   return Response.json({ eventId, sessions, registrations: parseJsonValues(registrationValues) }, { headers: noStoreHeaders });
 }
 
-async function readSession(eventId: string, sessionId: string) {
+async function readSession(eventId: string, sessionId: string, rawOptions: { includeRaw: boolean; offset: number; limit: number }) {
   const prefix = `cvar:event:${eventId}:session:${sessionId}`;
-  const [snapshotValue, passingIds] = await Promise.all([
+  const [snapshotValue, passingIds, rawRecordCount, rawRecordIds] = await Promise.all([
     redisCommand(['GET', `${prefix}:latest`]),
     redisCommand(['ZRANGE', `${prefix}:passing-order`, 0, -1]),
+    redisCommand(['ZCARD', `${prefix}:raw-record-order`]),
+    rawOptions.includeRaw ? redisCommand(['ZRANGE', `${prefix}:raw-record-order`, rawOptions.offset, rawOptions.offset + rawOptions.limit - 1]) : Promise.resolve([]),
   ]);
   const ids = Array.isArray(passingIds) ? passingIds.map(String) : [];
+  const rawIds = Array.isArray(rawRecordIds) ? rawRecordIds.map(String) : [];
   const passingValues = ids.length ? await redisCommand(['HMGET', `${prefix}:passings`, ...ids]) : [];
+  const rawRecordValues = rawIds.length ? await redisCommand(['HMGET', `${prefix}:raw-records`, ...rawIds]) : [];
   return Response.json({
     eventId,
     sessionId,
     snapshot: typeof snapshotValue === 'string' ? JSON.parse(snapshotValue) : null,
     passings: parseJsonValues(passingValues),
+    rawRecordCount: Number(rawRecordCount) || 0,
+    ...(rawOptions.includeRaw ? { rawRecords: parseJsonValues(rawRecordValues), rawOffset: rawOptions.offset, rawLimit: rawOptions.limit } : {}),
   }, { headers: noStoreHeaders });
 }
 
@@ -57,6 +67,11 @@ function parseJsonValues(value: unknown) {
 
 function safeId(value: string) {
   return /^[a-z0-9][a-z0-9-]{0,119}$/i.test(value);
+}
+
+function boundedInteger(value: string | null, minimum: number, maximum: number, fallback: number) {
+  const number = Number(value);
+  return Number.isInteger(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
 }
 
 function authorized(request: Request) {

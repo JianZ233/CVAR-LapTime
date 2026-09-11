@@ -102,7 +102,8 @@ function TimingBoard({ snapshot, feedState, secondsAgo }: { snapshot: TimingSnap
                 <TableHead className="w-16 px-4 font-mono text-xs uppercase tracking-wider text-muted-foreground sm:px-5">Pos</TableHead>
                 <TableHead className="w-20 font-mono text-xs uppercase tracking-wider text-muted-foreground">Car</TableHead>
                 <TableHead className="min-w-[210px] font-mono text-xs uppercase tracking-wider text-muted-foreground">Driver</TableHead>
-                <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground md:table-cell">Class</TableHead>
+                <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground md:table-cell">Group</TableHead>
+                <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">Class</TableHead>
                 <TableHead className="text-right font-mono text-xs uppercase tracking-wider text-muted-foreground">Laps</TableHead>
                 <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">Total time</TableHead>
                 <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:table-cell">Last lap</TableHead>
@@ -112,11 +113,12 @@ function TimingBoard({ snapshot, feedState, secondsAgo }: { snapshot: TimingSnap
             </TableHeader>
             <TableBody>
               {cars.map((car) => (
-                <TableRow key={car.registrationNumber} className="border-white/10 hover:bg-white/[0.035]">
+                <TableRow key={car.registrationKey || car.registrationNumber} className="border-white/10 hover:bg-white/[0.035]">
                   <TableCell className="px-4 py-4 sm:px-5"><div className="flex items-center gap-2"><span className="font-mono text-lg font-bold tabular-nums">{car.position || '—'}</span>{car.position === 1 && <Flag aria-label="Session leader" className="size-3.5 fill-[#d8ff3e] text-[#d8ff3e]" />}</div></TableCell>
                   <TableCell><span className="inline-grid min-w-11 place-items-center bg-white px-2 py-1 font-mono text-base font-black text-black">{car.number}</span></TableCell>
-                  <TableCell className="py-4"><p className="font-semibold text-white">{car.driver || `Car ${car.number}`}</p>{car.car && <p className="mt-0.5 text-xs text-muted-foreground">{car.car}</p>}</TableCell>
-                  <TableCell className="hidden text-zinc-300 md:table-cell">{car.className || '—'}</TableCell>
+                  <TableCell className="py-4"><p className="font-semibold text-white">{car.driver || `Car ${car.number}`}</p><p className="mt-0.5 text-xs text-muted-foreground md:hidden">{[car.groupName, car.className].filter(Boolean).join(' · ') || car.car}</p>{car.car && <p className="mt-0.5 hidden text-xs text-muted-foreground md:block">{car.car}</p>}</TableCell>
+                  <TableCell className="hidden text-zinc-300 md:table-cell">{car.groupName || '—'}</TableCell>
+                  <TableCell className="hidden text-zinc-300 lg:table-cell">{car.className || '—'}</TableCell>
                   <TableCell className="text-right font-mono text-base tabular-nums">{car.laps}</TableCell>
                   <TableCell className="hidden text-right font-mono text-base tabular-nums text-zinc-300 lg:table-cell">{car.totalTime || '—'}</TableCell>
                   <TableCell className="hidden text-right font-mono text-base tabular-nums text-zinc-300 sm:table-cell">{car.lastLap || '—'}</TableCell>

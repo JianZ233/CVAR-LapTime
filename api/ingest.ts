@@ -17,7 +17,16 @@ type PassingInput = {
 };
 
 type RegistrationInput = {
+  registrationKey?: string;
   registrationNumber: string;
+};
+
+type RawRecordInput = {
+  id: string;
+  command: string;
+  fields: string[];
+  line: string;
+  observedAt: string;
 };
 
 type IngestEnvelope = {
@@ -27,6 +36,7 @@ type IngestEnvelope = {
   sessionChanged: boolean;
   snapshot: TimingSnapshotInput;
   passings: PassingInput[];
+  rawRecords: RawRecordInput[];
   registrations: RegistrationInput[];
 };
 
@@ -44,7 +54,7 @@ export async function POST(request: Request) {
     const envelope = normalizeEnvelope(value);
     if (!envelope) return Response.json({ error: 'Invalid timing payload' }, { status: 400 });
     await storeEnvelope(envelope);
-    return Response.json({ ok: true, cars: envelope.snapshot.cars.length, passings: envelope.passings.length }, { headers: { 'cache-control': 'no-store' } });
+    return Response.json({ ok: true, cars: envelope.snapshot.cars.length, passings: envelope.passings.length, rawRecords: envelope.rawRecords.length }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     console.error('Unable to ingest live timing', error);
     return Response.json({ error: 'Unable to store timing data' }, { status: 502 });
@@ -79,7 +89,7 @@ async function storeEnvelope(envelope: IngestEnvelope) {
   }
 
   if (envelope.registrations.length) {
-    commands.push(['HSET', `${eventPrefix}:registrations`, ...envelope.registrations.flatMap((registration) => [registration.registrationNumber, JSON.stringify(registration)])]);
+    commands.push(['HSET', `${eventPrefix}:registrations`, ...envelope.registrations.flatMap((registration) => [registration.registrationKey || registration.registrationNumber, JSON.stringify(registration)])]);
   }
 
   if (envelope.passings.length) {
@@ -89,20 +99,29 @@ async function storeEnvelope(envelope: IngestEnvelope) {
     );
   }
 
+  if (envelope.rawRecords.length) {
+    commands.push(
+      ['HSET', `${sessionPrefix}:raw-records`, ...envelope.rawRecords.flatMap((record) => [record.id, JSON.stringify(record)])],
+      ['ZADD', `${sessionPrefix}:raw-record-order`, ...envelope.rawRecords.flatMap((record) => [Date.parse(record.observedAt) || timestamp, record.id])],
+    );
+  }
+
   await redisPipeline(commands);
 }
 
 function normalizeEnvelope(value: unknown): IngestEnvelope | null {
   if (isSnapshotShape(value)) {
     const sessionId = `legacy-${slug(value.runName)}`;
-    return { eventId: 'canyon-classic-2026', sessionId, sessionStartedAt: value.updatedAt, sessionChanged: true, snapshot: value, passings: [], registrations: [] };
+    return { eventId: 'canyon-classic-2026', sessionId, sessionStartedAt: value.updatedAt, sessionChanged: true, snapshot: value, passings: [], rawRecords: [], registrations: [] };
   }
   if (!value || typeof value !== 'object') return null;
   const envelope = value as Partial<IngestEnvelope>;
   if (!safeId(envelope.eventId) || !safeId(envelope.sessionId) || typeof envelope.sessionStartedAt !== 'string' || typeof envelope.sessionChanged !== 'boolean' || !isSnapshotShape(envelope.snapshot)) return null;
   if (!Array.isArray(envelope.passings) || envelope.passings.length > 500 || !envelope.passings.every(isPassingShape)) return null;
+  const rawRecords = envelope.rawRecords ?? [];
+  if (!Array.isArray(rawRecords) || rawRecords.length > 2_000 || !rawRecords.every(isRawRecordShape)) return null;
   if (!Array.isArray(envelope.registrations) || envelope.registrations.length > 500 || !envelope.registrations.every(isRegistrationShape)) return null;
-  return envelope as IngestEnvelope;
+  return { ...envelope, rawRecords } as IngestEnvelope;
 }
 
 function isSnapshotShape(value: unknown): value is TimingSnapshotInput {
@@ -120,7 +139,13 @@ function isPassingShape(value: unknown): value is PassingInput {
 function isRegistrationShape(value: unknown): value is RegistrationInput {
   if (!value || typeof value !== 'object') return false;
   const registration = value as Partial<RegistrationInput>;
-  return typeof registration.registrationNumber === 'string' && registration.registrationNumber.length > 0 && registration.registrationNumber.length <= 100;
+  return typeof registration.registrationNumber === 'string' && registration.registrationNumber.length > 0 && registration.registrationNumber.length <= 100 && (registration.registrationKey === undefined || (typeof registration.registrationKey === 'string' && registration.registrationKey.length > 0 && registration.registrationKey.length <= 120));
+}
+
+function isRawRecordShape(value: unknown): value is RawRecordInput {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Partial<RawRecordInput>;
+  return typeof record.id === 'string' && record.id.length <= 240 && typeof record.command === 'string' && record.command.length <= 24 && typeof record.line === 'string' && record.line.length <= 8_192 && typeof record.observedAt === 'string' && Array.isArray(record.fields) && record.fields.length <= 100 && record.fields.every((field) => typeof field === 'string' && field.length <= 4_096);
 }
 
 function safeId(value: unknown): value is string {
