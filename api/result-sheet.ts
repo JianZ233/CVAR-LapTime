@@ -10,8 +10,9 @@ import {
 import { redisCommand, redisIsConfigured } from './_redis.js';
 import { readAdjustments, type ResultAdjustment } from './_adjustments.js';
 import {
-  parseRacePositionHash,
   racePositionForCar,
+  readRacePositions,
+  snapshotUsesRacePositions,
 } from './_race_positions.js';
 
 type ResultCar = {
@@ -103,26 +104,24 @@ export async function GET(request: Request) {
     }
 
     const sessionPrefix = `cvar:event:${eventId}:session:${sessionId}`;
-    const [stored, passingIdValues, adjustments, storedPositions] =
-      await Promise.all([
-        redisCommand([
-          'GET',
-          requestedSessionId ? `${sessionPrefix}:latest` : 'cvar:live',
-        ]),
-        redisCommand(['ZRANGE', `${sessionPrefix}:passing-order`, 0, -1]),
-        readAdjustments(eventId, sessionId),
-        redisCommand(['HGETALL', `${sessionPrefix}:race-positions`]),
-      ]);
+    const [stored, passingIdValues, adjustments] = await Promise.all([
+      redisCommand([
+        'GET',
+        requestedSessionId ? `${sessionPrefix}:latest` : 'cvar:live',
+      ]),
+      redisCommand(['ZRANGE', `${sessionPrefix}:passing-order`, 0, -1]),
+      readAdjustments(eventId, sessionId),
+    ]);
     if (typeof stored !== 'string') {
       return Response.json(
         { error: 'Result sheet data is not available' },
         { status: 404, headers: noStoreHeaders },
       );
     }
-    const snapshot = parseSnapshot(
-      stored,
-      parseRacePositionHash(storedPositions),
-    );
+    const racePositions = snapshotUsesRacePositions(stored)
+      ? await readRacePositions(sessionPrefix)
+      : {};
+    const snapshot = parseSnapshot(stored, racePositions);
     if (!snapshot)
       return Response.json(
         { error: 'Result sheet data is invalid' },

@@ -8,7 +8,8 @@ import {
 import {
   hydrateRacePositions,
   parseRacePositionHash,
-} from '../api/_race_positions.ts';
+  parseRacePositionsFromRawRecords,
+} from '../lib/race-positions.ts';
 
 function snapshot(runName, sessionMode = 'practice') {
   return {
@@ -87,4 +88,13 @@ test('hydrates POS captured by an already-running relay', () => {
     hydrated.cars.map((car) => car.racePosition),
     [2, 1],
   );
+});
+
+test('recovers POS from archived RMonitor race records', () => {
+  const positions = parseRacePositionsFromRawRecords([
+    JSON.stringify({ command: '$G', fields: ['$G', '2', 'R1'] }),
+    JSON.stringify({ command: '$H', fields: ['$H', '1', 'R1'] }),
+    JSON.stringify({ command: '$G', fields: ['$G', '1', 'R2'] }),
+  ]);
+  assert.deepEqual(positions, { R1: 2, R2: 1 });
 });

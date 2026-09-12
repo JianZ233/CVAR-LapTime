@@ -1,7 +1,8 @@
 import { redisCommand, redisIsConfigured } from './_redis.js';
 import {
   hydrateRacePositions,
-  parseRacePositionHash,
+  readRacePositions,
+  snapshotUsesRacePositions,
 } from './_race_positions.js';
 
 export function GET() {
@@ -25,19 +26,16 @@ async function readSnapshot() {
         { error: 'No live session is available' },
         { status: 404, headers: noStoreHeaders },
       );
-    const storedPositions =
-      typeof sessionId === 'string'
-        ? await redisCommand([
-            'HGETALL',
-            `cvar:event:canyon-classic-2026:session:${sessionId}:race-positions`,
-          ])
-        : [];
+    const snapshot = JSON.parse(stored);
+    const racePositions =
+      typeof sessionId === 'string' && snapshotUsesRacePositions(snapshot)
+        ? await readRacePositions(
+            `cvar:event:canyon-classic-2026:session:${sessionId}`,
+          )
+        : {};
     return Response.json(
       {
-        snapshot: hydrateRacePositions(
-          JSON.parse(stored),
-          parseRacePositionHash(storedPositions),
-        ),
+        snapshot: hydrateRacePositions(snapshot, racePositions),
       },
       { headers: liveHeaders },
     );

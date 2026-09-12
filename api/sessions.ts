@@ -1,8 +1,9 @@
 import { redisCommand, redisIsConfigured, redisPipeline } from './_redis.js';
 import { readAdjustments } from './_adjustments.js';
 import {
-  parseRacePositionHash,
   racePositionForCar,
+  readRacePositions,
+  snapshotUsesRacePositions,
 } from './_race_positions.js';
 
 type SessionSummary = {
@@ -99,24 +100,20 @@ async function listSessions(eventId: string) {
 }
 
 async function readSession(eventId: string, sessionId: string) {
-  const [stored, adjustments, storedPositions] = await Promise.all([
-    redisCommand(['GET', `cvar:event:${eventId}:session:${sessionId}:latest`]),
+  const sessionPrefix = `cvar:event:${eventId}:session:${sessionId}`;
+  const [stored, adjustments] = await Promise.all([
+    redisCommand(['GET', `${sessionPrefix}:latest`]),
     readAdjustments(eventId, sessionId),
-    redisCommand([
-      'HGETALL',
-      `cvar:event:${eventId}:session:${sessionId}:race-positions`,
-    ]),
   ]);
   if (typeof stored !== 'string')
     return Response.json(
       { error: 'Session not found' },
       { status: 404, headers: noStoreHeaders },
     );
-  const snapshot = sanitizeSnapshot(
-    stored,
-    adjustments,
-    parseRacePositionHash(storedPositions),
-  );
+  const racePositions = snapshotUsesRacePositions(stored)
+    ? await readRacePositions(sessionPrefix)
+    : {};
+  const snapshot = sanitizeSnapshot(stored, adjustments, racePositions);
   if (!snapshot)
     return Response.json(
       { error: 'Session data is unavailable' },
