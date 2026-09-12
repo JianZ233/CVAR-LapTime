@@ -9,6 +9,10 @@ import {
 
 import { redisCommand, redisIsConfigured } from './_redis.js';
 import { readAdjustments, type ResultAdjustment } from './_adjustments.js';
+import {
+  parseRacePositionHash,
+  racePositionForCar,
+} from './_race_positions.js';
 
 type ResultCar = {
   registrationKey: string;
@@ -18,6 +22,7 @@ type ResultCar = {
   groupName: string;
   className: string;
   position: number;
+  racePosition?: number;
   laps: number;
   bestLapNumber: number;
   totalTime: string;
@@ -98,21 +103,26 @@ export async function GET(request: Request) {
     }
 
     const sessionPrefix = `cvar:event:${eventId}:session:${sessionId}`;
-    const [stored, passingIdValues, adjustments] = await Promise.all([
-      redisCommand([
-        'GET',
-        requestedSessionId ? `${sessionPrefix}:latest` : 'cvar:live',
-      ]),
-      redisCommand(['ZRANGE', `${sessionPrefix}:passing-order`, 0, -1]),
-      readAdjustments(eventId, sessionId),
-    ]);
+    const [stored, passingIdValues, adjustments, storedPositions] =
+      await Promise.all([
+        redisCommand([
+          'GET',
+          requestedSessionId ? `${sessionPrefix}:latest` : 'cvar:live',
+        ]),
+        redisCommand(['ZRANGE', `${sessionPrefix}:passing-order`, 0, -1]),
+        readAdjustments(eventId, sessionId),
+        redisCommand(['HGETALL', `${sessionPrefix}:race-positions`]),
+      ]);
     if (typeof stored !== 'string') {
       return Response.json(
         { error: 'Result sheet data is not available' },
         { status: 404, headers: noStoreHeaders },
       );
     }
-    const snapshot = parseSnapshot(stored);
+    const snapshot = parseSnapshot(
+      stored,
+      parseRacePositionHash(storedPositions),
+    );
     if (!snapshot)
       return Response.json(
         { error: 'Result sheet data is invalid' },
@@ -176,7 +186,11 @@ export async function createResultSheet(
   const logo = logoBytes
     ? await document.embedPng(logoBytes).catch(() => null)
     : null;
-  const cars = rankCars(snapshot.cars, adjustments);
+  const resultOrder = resultOrderForSession(
+    snapshot.runName,
+    snapshot.sessionMode,
+  );
+  const cars = rankCars(snapshot.cars, adjustments, resultOrder);
   const classificationPages = chunk(cars, 34);
   if (!classificationPages.length) classificationPages.push([]);
   const penaltyPages = chunk(
@@ -274,7 +288,11 @@ function drawClassificationPage({
     page,
     snapshot,
     title: 'RESULT SHEET',
-    label: 'ADJUSTED BEST-LAP ORDER',
+    label:
+      resultOrderForSession(snapshot.runName, snapshot.sessionMode) ===
+      'position'
+        ? 'RACE POSITION ORDER'
+        : 'ADJUSTED BEST-LAP ORDER',
     fonts,
     logo,
   });
@@ -1080,6 +1098,7 @@ function fitText(value: string, font: PDFFont, size: number, maxWidth: number) {
 function rankCars(
   cars: ResultCar[],
   adjustments: Record<string, ResultAdjustment>,
+  resultOrder: 'best-lap' | 'position',
 ) {
   const ranked = cars
     .map((car) => ({
@@ -1092,6 +1111,10 @@ function rankCars(
         resultStatusOrder(left.resultAdjustment?.status) -
         resultStatusOrder(right.resultAdjustment?.status);
       if (statusDifference) return statusDifference;
+      if (resultOrder === 'position') {
+        const difference = officialPosition(left) - officialPosition(right);
+        return difference || left.position - right.position;
+      }
       const difference =
         adjustedLapMilliseconds(left) - adjustedLapMilliseconds(right);
       return Number.isNaN(difference)
@@ -1136,17 +1159,28 @@ function rankCars(
         ? millisecondsToLapTime(lapTime)
         : undefined,
       gapToPrevious:
+        resultOrder === 'position' ||
         index === 0 ||
         !Number.isFinite(previousTime) ||
         !Number.isFinite(lapTime)
           ? ''
           : formatGap(lapTime - previousTime),
       gapToLeader:
-        index === 0 || !Number.isFinite(leaderTime) || !Number.isFinite(lapTime)
+        resultOrder === 'position' ||
+        index === 0 ||
+        !Number.isFinite(leaderTime) ||
+        !Number.isFinite(lapTime)
           ? ''
           : formatGap(lapTime - leaderTime),
     };
   });
+}
+
+function officialPosition(car: ResultCar) {
+  const position = car.racePosition || car.position;
+  return Number.isInteger(position) && position > 0
+    ? position
+    : Number.MAX_SAFE_INTEGER;
 }
 
 function formatGap(milliseconds: number) {
@@ -1196,7 +1230,10 @@ function millisecondsToLapTime(value: number) {
   return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
 }
 
-function parseSnapshot(value: string): ResultSnapshot | null {
+function parseSnapshot(
+  value: string,
+  racePositions: Record<string, number>,
+): ResultSnapshot | null {
   try {
     const snapshot = JSON.parse(value) as Record<string, unknown>;
     if (typeof snapshot.runName !== 'string' || !Array.isArray(snapshot.cars))
@@ -1213,7 +1250,7 @@ function parseSnapshot(value: string): ResultSnapshot | null {
       initializedAt: stringValue(snapshot.initializedAt),
       updatedAt: stringValue(snapshot.updatedAt),
       cars: snapshot.cars
-        .map(parseCar)
+        .map((car) => parseCar(car, racePositions))
         .filter((car): car is ResultCar => Boolean(car)),
     };
   } catch {
@@ -1221,7 +1258,10 @@ function parseSnapshot(value: string): ResultSnapshot | null {
   }
 }
 
-function parseCar(value: unknown): ResultCar | null {
+function parseCar(
+  value: unknown,
+  racePositions: Record<string, number>,
+): ResultCar | null {
   if (!value || typeof value !== 'object') return null;
   const car = value as Record<string, unknown>;
   return {
@@ -1232,6 +1272,7 @@ function parseCar(value: unknown): ResultCar | null {
     groupName: stringValue(car.groupName),
     className: stringValue(car.className),
     position: numberValue(car.position),
+    racePosition: racePositionForCar(car, racePositions),
     laps: numberValue(car.laps),
     bestLapNumber: numberValue(car.bestLapNumber),
     totalTime: stringValue(car.totalTime),
@@ -1317,6 +1358,16 @@ function formatSessionName(value: string) {
     .replace(/^R(\d+)$/i, 'Race $1')
     .replace(/^PQ$/i, 'Practice / Qualifying');
   return `${groupLabel} - ${sessionLabel}`;
+}
+
+function resultOrderForSession(
+  runName: string,
+  sessionMode?: ResultSnapshot['sessionMode'],
+): 'best-lap' | 'position' {
+  return sessionMode === 'race' ||
+    /\brace(?:\s*\d+)?\b/i.test(formatSessionName(runName))
+    ? 'position'
+    : 'best-lap';
 }
 
 function wheelSessionName(value: string) {

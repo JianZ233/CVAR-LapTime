@@ -219,6 +219,14 @@ async function storeEnvelope(envelope: IngestEnvelope) {
   }
 
   if (envelope.rawRecords.length) {
+    const racePositions = envelope.rawRecords.flatMap((record) => {
+      if (record.command !== '$G') return [];
+      const position = Number(record.fields[1]);
+      const registrationNumber = record.fields[2];
+      return Number.isInteger(position) && position > 0 && registrationNumber
+        ? [registrationNumber, position]
+        : [];
+    });
     commands.push(
       [
         'HSET',
@@ -237,6 +245,12 @@ async function storeEnvelope(envelope: IngestEnvelope) {
         ]),
       ],
     );
+    if (racePositions.length)
+      commands.push([
+        'HSET',
+        `${sessionPrefix}:race-positions`,
+        ...racePositions,
+      ]);
   }
 
   await redisPipeline(commands);

@@ -40,7 +40,8 @@ import {
   formatTrackPrimary,
   formatTrackSummary,
   isTimingSnapshot,
-  rankSnapshotByBestLap,
+  rankSnapshotForSession,
+  resultOrderForSession,
   type TimingSnapshot,
 } from '@/lib/timing';
 
@@ -205,6 +206,11 @@ function TimingBoard({
     [selectedClass, snapshot.cars],
   );
   const leader = snapshot.cars[0];
+  const resultOrder = resultOrderForSession(
+    snapshot.runName,
+    snapshot.sessionMode,
+  );
+  const positionOrder = resultOrder === 'position';
   const liveSession = sessions.find((session) => session.id === liveSessionId);
   const selectedSession = sessions.find(
     (session) => session.id === selectedSessionId,
@@ -335,16 +341,22 @@ function TimingBoard({
         <Stat
           label="Cars timed"
           value={String(snapshot.cars.length)}
-          detail="Best-lap order"
+          detail={positionOrder ? 'Race POS order' : 'Best-lap order'}
         />
       </section>
 
       <section className="timing-card">
         <div className="timing-card-header">
           <div>
-            <p className="classification-title">Best-lap classification</p>
+            <p className="classification-title">
+              {positionOrder
+                ? 'Race position classification'
+                : 'Best-lap classification'}
+            </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Updates at every start / finish crossing
+              {positionOrder
+                ? 'Race sessions are ordered by the POS feed'
+                : 'Practice and timed sessions are ordered by best lap'}
             </p>
           </div>
           <div className="class-filter" aria-label="Filter timing by class">
@@ -402,7 +414,11 @@ function TimingBoard({
                     <span>Best lap</span>
                     <strong>{car.adjustedBestLap || car.bestLap || '—'}</strong>
                     <small>
-                      {car.position === 1 ? 'Fastest' : car.gap || 'No gap'}
+                      {car.gap === '—'
+                        ? 'Fastest lap'
+                        : car.gap
+                          ? `${car.gap} to fastest`
+                          : 'No lap gap'}
                     </small>
                   </div>
                   <div className="mobile-driver-details">
@@ -839,7 +855,7 @@ function useLiveTiming() {
           throw new Error('Invalid timing snapshot');
         if (cancelled) return;
         hasReceivedData.current = true;
-        setSnapshot(rankSnapshotByBestLap(body.snapshot));
+        setSnapshot(rankSnapshotForSession(body.snapshot));
         setFeedState(
           selectedSessionId === 'live'
             ? Date.now() - new Date(body.snapshot.updatedAt).getTime() > 15_000

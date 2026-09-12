@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createTimingState, formatLapTime, parseCsvLine, timeToMilliseconds } from './rmonitor.mjs';
+import {
+  createTimingState,
+  formatLapTime,
+  parseCsvLine,
+  timeToMilliseconds,
+} from './rmonitor.mjs';
 
 test('parses quoted RMonitor CSV fields', () => {
-  assert.deepEqual(parseCsvLine('$A,"R1","65",123,"Sam","LeComte","Lotus, 23B",7'), ['$A', 'R1', '65', '123', 'Sam', 'LeComte', 'Lotus, 23B', '7']);
+  assert.deepEqual(
+    parseCsvLine('$A,"R1","65",123,"Sam","LeComte","Lotus, 23B",7'),
+    ['$A', 'R1', '65', '123', 'Sam', 'LeComte', 'Lotus, 23B', '7'],
+  );
 });
 
 test('converts protocol times', () => {
@@ -13,8 +21,26 @@ test('converts protocol times', () => {
 });
 
 test('builds practice standings from Orbits records', () => {
-  const state = createTimingState({ eventName: 'CVAR', sessionMode: 'practice', streamId: 'test-stream' });
-  ['$I,"08:00:00"', '$B,55,"Gp6-TT1=TT1"', '$C,7,"FA"', '$E,"TRACKNAME","Eagles Canyon Raceway"', '$A,"R1","65",123,"Sam","LeComte","6",7', '$A,"R2","14",456,"Morgan","Ellis","6",7', '$COMP,"R1","65",7,"Sam","LeComte","6","Austin TX"', '$F,9999,"00:15:00","08:19:35","00:16:07.400","GREEN"', '$J,"R1","00:02:03.826","00:02:03.826"', '$J,"R2","00:02:04.100","00:02:04.100"', '$H,1,"R1",1,"00:02:03.826"', '$H,2,"R2",1,"00:02:04.100"', '$SP,1,"R1",1,"00:02:03.826"'].forEach((line) => state.apply(line));
+  const state = createTimingState({
+    eventName: 'CVAR',
+    sessionMode: 'practice',
+    streamId: 'test-stream',
+  });
+  [
+    '$I,"08:00:00"',
+    '$B,55,"Gp6-TT1=TT1"',
+    '$C,7,"FA"',
+    '$E,"TRACKNAME","Eagles Canyon Raceway"',
+    '$A,"R1","65",123,"Sam","LeComte","6",7',
+    '$A,"R2","14",456,"Morgan","Ellis","6",7',
+    '$COMP,"R1","65",7,"Sam","LeComte","6","Austin TX"',
+    '$F,9999,"00:15:00","08:19:35","00:16:07.400","GREEN"',
+    '$J,"R1","00:02:03.826","00:02:03.826"',
+    '$J,"R2","00:02:04.100","00:02:04.100"',
+    '$H,1,"R1",1,"00:02:03.826"',
+    '$H,2,"R2",1,"00:02:04.100"',
+    '$SP,1,"R1",1,"00:02:03.826"',
+  ].forEach((line) => state.apply(line));
   const snapshot = state.snapshot();
   assert.equal(snapshot.runId, '55');
   assert.equal(snapshot.runName, 'Gp6-TT1=TT1');
@@ -86,20 +112,51 @@ test('builds practice standings from Orbits records', () => {
 });
 
 test('preserves duplicate Orbits registration numbers as separate competitors', () => {
-  const state = createTimingState({ sessionMode: 'practice', streamId: 'duplicates' });
-  ['$H,1,"64",5,"00:02:07.912"', '$H,2,"64",0,"00:00:00.000"', '$A,"64","64",1803412,"Ian","Schoen","6",1', '$A,"64","64",212990,"Enrique","Contreras","6",1', '$C,1,"FF2"'].forEach((line) => state.apply(line));
+  const state = createTimingState({
+    sessionMode: 'practice',
+    streamId: 'duplicates',
+  });
+  [
+    '$H,1,"64",5,"00:02:07.912"',
+    '$H,2,"64",0,"00:00:00.000"',
+    '$A,"64","64",1803412,"Ian","Schoen","6",1',
+    '$A,"64","64",212990,"Enrique","Contreras","6",1',
+    '$C,1,"FF2"',
+  ].forEach((line) => state.apply(line));
   const cars = state.snapshot().cars;
   assert.equal(cars.length, 2);
-  assert.deepEqual(cars.map((car) => [car.registrationKey, car.number, car.driver, car.position]), [
-    ['64', '64', 'Ian Schoen', 1],
-    ['64#2', '64a', 'Enrique Contreras', 2],
-  ]);
+  assert.deepEqual(
+    cars.map((car) => [
+      car.registrationKey,
+      car.number,
+      car.driver,
+      car.position,
+    ]),
+    [
+      ['64', '64', 'Ian Schoen', 1],
+      ['64#2', '64a', 'Enrique Contreras', 2],
+    ],
+  );
   assert.equal(cars[1].bestLap, '');
-  assert.deepEqual(state.registrations().map((registration) => [registration.registrationKey, registration.transponderId]), [['64', '1803412'], ['64#2', '212990']]);
+  assert.deepEqual(
+    state
+      .registrations()
+      .map((registration) => [
+        registration.registrationKey,
+        registration.transponderId,
+      ]),
+    [
+      ['64', '1803412'],
+      ['64#2', '212990'],
+    ],
+  );
 });
 
-test('ranks race sessions by best lap instead of total time', () => {
-  const state = createTimingState({ sessionMode: 'race', streamId: 'best-lap-ranking' });
+test('preserves official race positions while ranking the feed by best lap', () => {
+  const state = createTimingState({
+    sessionMode: 'race',
+    streamId: 'best-lap-ranking',
+  });
   [
     '$G,1,"R1",8,"00:16:00.000"',
     '$G,2,"R2",8,"00:16:10.000"',
@@ -108,8 +165,16 @@ test('ranks race sessions by best lap instead of total time', () => {
   ].forEach((line) => state.apply(line));
 
   const cars = state.snapshot().cars;
-  assert.deepEqual(cars.map((car) => [car.registrationNumber, car.position, car.gap]), [
-    ['R2', 1, '—'],
-    ['R1', 2, '+1.500'],
-  ]);
+  assert.deepEqual(
+    cars.map((car) => [
+      car.registrationNumber,
+      car.position,
+      car.racePosition,
+      car.gap,
+    ]),
+    [
+      ['R2', 1, 2, '—'],
+      ['R1', 2, 1, '+1.500'],
+    ],
+  );
 });

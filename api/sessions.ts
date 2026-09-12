@@ -1,5 +1,9 @@
 import { redisCommand, redisIsConfigured, redisPipeline } from './_redis.js';
 import { readAdjustments } from './_adjustments.js';
+import {
+  parseRacePositionHash,
+  racePositionForCar,
+} from './_race_positions.js';
 
 type SessionSummary = {
   id: string;
@@ -95,16 +99,24 @@ async function listSessions(eventId: string) {
 }
 
 async function readSession(eventId: string, sessionId: string) {
-  const [stored, adjustments] = await Promise.all([
+  const [stored, adjustments, storedPositions] = await Promise.all([
     redisCommand(['GET', `cvar:event:${eventId}:session:${sessionId}:latest`]),
     readAdjustments(eventId, sessionId),
+    redisCommand([
+      'HGETALL',
+      `cvar:event:${eventId}:session:${sessionId}:race-positions`,
+    ]),
   ]);
   if (typeof stored !== 'string')
     return Response.json(
       { error: 'Session not found' },
       { status: 404, headers: noStoreHeaders },
     );
-  const snapshot = sanitizeSnapshot(stored, adjustments);
+  const snapshot = sanitizeSnapshot(
+    stored,
+    adjustments,
+    parseRacePositionHash(storedPositions),
+  );
   if (!snapshot)
     return Response.json(
       { error: 'Session data is unavailable' },
@@ -150,6 +162,7 @@ function parseSummary(value: unknown) {
 function sanitizeSnapshot(
   value: string,
   adjustments: Awaited<ReturnType<typeof readAdjustments>>,
+  racePositions: Record<string, number>,
 ) {
   try {
     const snapshot = JSON.parse(value) as Record<string, unknown>;
@@ -186,7 +199,7 @@ function sanitizeSnapshot(
           : { protocol: 'RMonitor', recordsCaptured: 0, commandCounts: {} },
       updatedAt: stringValue(snapshot.updatedAt),
       cars: snapshot.cars
-        .map(sanitizeCar)
+        .map((car) => sanitizeCar(car, racePositions))
         .filter((car): car is NonNullable<typeof car> => Boolean(car))
         .map((car) => ({
           ...car,
@@ -199,7 +212,7 @@ function sanitizeSnapshot(
   }
 }
 
-function sanitizeCar(value: unknown) {
+function sanitizeCar(value: unknown, racePositions: Record<string, number>) {
   if (!value || typeof value !== 'object') return null;
   const car = value as Record<string, unknown>;
   return {
@@ -212,6 +225,7 @@ function sanitizeCar(value: unknown) {
     classNumber: typeof car.classNumber === 'number' ? car.classNumber : null,
     className: stringValue(car.className),
     position: numberValue(car.position),
+    racePosition: racePositionForCar(car, racePositions),
     laps: numberValue(car.laps),
     bestLapNumber: numberValue(car.bestLapNumber),
     latestLapNumber: numberValue(car.latestLapNumber),

@@ -8,6 +8,7 @@ export type TimingCar = {
   classNumber: number | null;
   className: string;
   position: number;
+  racePosition?: number;
   laps: number;
   bestLapNumber: number;
   latestLapNumber: number;
@@ -187,16 +188,38 @@ export function isTimingSnapshot(value: unknown): value is TimingSnapshot {
   );
 }
 
-export function rankSnapshotByBestLap(
+export type ResultOrder = 'best-lap' | 'position';
+
+export function resultOrderForSession(
+  runName: string,
+  sessionMode?: TimingSnapshot['sessionMode'],
+): ResultOrder {
+  return sessionMode === 'race' ||
+    /\brace(?:\s*\d+)?\b/i.test(formatSessionName(runName))
+    ? 'position'
+    : 'best-lap';
+}
+
+export function rankSnapshotForSession(
   snapshot: TimingSnapshot,
 ): TimingSnapshot {
+  const resultOrder = resultOrderForSession(
+    snapshot.runName,
+    snapshot.sessionMode,
+  );
   const ranked = [...snapshot.cars].sort((left, right) => {
     const leftStatus = resultStatusOrder(left.resultAdjustment?.status);
     const rightStatus = resultStatusOrder(right.resultAdjustment?.status);
     if (leftStatus !== rightStatus) return leftStatus - rightStatus;
-    const leftTime = adjustedLapMilliseconds(left);
-    const rightTime = adjustedLapMilliseconds(right);
-    if (leftTime !== rightTime) return leftTime - rightTime;
+    if (resultOrder === 'position') {
+      const positionDifference =
+        officialPosition(left) - officialPosition(right);
+      if (positionDifference) return positionDifference;
+    } else {
+      const leftTime = adjustedLapMilliseconds(left);
+      const rightTime = adjustedLapMilliseconds(right);
+      if (leftTime !== rightTime) return leftTime - rightTime;
+    }
     return left.position - right.position;
   });
   const overrides = ranked
@@ -218,15 +241,13 @@ export function rankSnapshotByBestLap(
       car,
     );
   });
-  const leaderTime = ranked.length
-    ? adjustedLapMilliseconds(ranked[0])
-    : Number.POSITIVE_INFINITY;
+  const fastestTime = Math.min(...ranked.map(adjustedLapMilliseconds));
 
   return {
     ...snapshot,
     cars: ranked.map((car, index) => {
       const carTime = adjustedLapMilliseconds(car);
-      const hasGap = Number.isFinite(leaderTime) && Number.isFinite(carTime);
+      const hasGap = Number.isFinite(fastestTime) && Number.isFinite(carTime);
       const penalty = car.resultAdjustment?.penaltySeconds || 0;
       return {
         ...car,
@@ -236,14 +257,21 @@ export function rankSnapshotByBestLap(
             ? millisecondsToLapTime(carTime)
             : undefined,
         gap:
-          index === 0
+          carTime === fastestTime
             ? '—'
             : hasGap
-              ? `+${((carTime - leaderTime) / 1000).toFixed(3)}`
+              ? `+${((carTime - fastestTime) / 1000).toFixed(3)}`
               : '',
       };
     }),
   };
+}
+
+function officialPosition(car: TimingCar) {
+  const position = car.racePosition || car.position;
+  return Number.isInteger(position) && position > 0
+    ? position
+    : Number.MAX_SAFE_INTEGER;
 }
 
 function adjustedLapMilliseconds(car: TimingCar) {

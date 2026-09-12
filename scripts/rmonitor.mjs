@@ -32,8 +32,12 @@ export function createTimingState(options = {}) {
   const seenPassingIds = new Set();
   const commandCounts = new Map();
   const competitorKeysByRegistration = new Map();
-  const configuredMode = ['race', 'practice'].includes(options.sessionMode) ? options.sessionMode : 'auto';
-  const streamId = options.streamId || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const configuredMode = ['race', 'practice'].includes(options.sessionMode)
+    ? options.sessionMode
+    : 'auto';
+  const streamId =
+    options.streamId ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   let inferredMode = 'practice';
   let rawRecordSequence = 0;
   let runId = '';
@@ -53,7 +57,10 @@ export function createTimingState(options = {}) {
   function ensureCompetitor(registrationNumber, occurrence = 0) {
     const keys = competitorKeysByRegistration.get(registrationNumber) || [];
     while (keys.length <= occurrence) {
-      const registrationKey = keys.length === 0 ? registrationNumber : `${registrationNumber}#${keys.length + 1}`;
+      const registrationKey =
+        keys.length === 0
+          ? registrationNumber
+          : `${registrationNumber}#${keys.length + 1}`;
       keys.push(registrationKey);
       competitors.set(registrationKey, {
         registrationKey,
@@ -100,16 +107,23 @@ export function createTimingState(options = {}) {
 
   function competitorForDefinition(command, fields) {
     const registrationNumber = fields[1];
-    const candidates = (competitorKeysByRegistration.get(registrationNumber) || []).map((key) => competitors.get(key));
+    const candidates = (
+      competitorKeysByRegistration.get(registrationNumber) || []
+    ).map((key) => competitors.get(key));
     const transponderId = command === '$A' ? fields[3] : '';
     const driver = [fields[4], fields[5]].filter(Boolean).join(' ').trim();
-    const matched = candidates.find((car) => (transponderId && car.transponderId === transponderId) || (driver && car.driver === driver));
+    const matched = candidates.find(
+      (car) =>
+        (transponderId && car.transponderId === transponderId) ||
+        (driver && car.driver === driver),
+    );
     return matched || competitorForSeries(command, registrationNumber);
   }
 
   function disambiguateDisplayNumbers(registrationNumber) {
     const used = new Set();
-    for (const key of competitorKeysByRegistration.get(registrationNumber) || []) {
+    for (const key of competitorKeysByRegistration.get(registrationNumber) ||
+      []) {
       const car = competitors.get(key);
       const base = car.sourceNumber || registrationNumber;
       let displayNumber = base;
@@ -136,7 +150,10 @@ export function createTimingState(options = {}) {
       line,
       observedAt,
     });
-    commandCounts.set(command || 'UNKNOWN', (commandCounts.get(command || 'UNKNOWN') || 0) + 1);
+    commandCounts.set(
+      command || 'UNKNOWN',
+      (commandCounts.get(command || 'UNKNOWN') || 0) + 1,
+    );
     if (fields.length < 2) return false;
 
     if (command === '$I') {
@@ -160,7 +177,8 @@ export function createTimingState(options = {}) {
       runName = fields[2] || fields[1] || runName;
       const normalized = runName.toLowerCase();
       if (/race|heat|feature|final/.test(normalized)) inferredMode = 'race';
-      if (/practice|qual|warm.?up|test/.test(normalized)) inferredMode = 'practice';
+      if (/practice|qual|warm.?up|test/.test(normalized))
+        inferredMode = 'practice';
       return true;
     }
 
@@ -183,7 +201,10 @@ export function createTimingState(options = {}) {
       car.transponderId = fields[3] || car.transponderId;
       car.firstName = fields[4] || car.firstName;
       car.lastName = fields[5] || car.lastName;
-      car.driver = [car.firstName, car.lastName].filter(Boolean).join(' ').trim();
+      car.driver = [car.firstName, car.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
       car.nationality = fields[6] || car.nationality;
       car.groupName = formatGroupName(car.nationality);
       car.classNumber = numberOrNull(fields[7]);
@@ -197,7 +218,10 @@ export function createTimingState(options = {}) {
       car.classNumber = numberOrNull(fields[3]);
       car.firstName = fields[4] || car.firstName;
       car.lastName = fields[5] || car.lastName;
-      car.driver = [car.firstName, car.lastName].filter(Boolean).join(' ').trim();
+      car.driver = [car.firstName, car.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
       car.nationality = fields[6] || car.nationality;
       car.groupName = formatGroupName(car.nationality);
       car.additionalInfo = fields[7] || car.additionalInfo;
@@ -248,10 +272,12 @@ export function createTimingState(options = {}) {
       const total = scoreTimeToMilliseconds(fields[3]);
       car.lastLapMs = lap;
       car.totalTimeMs = total;
-      if (lap !== null && (car.bestLapMs === null || lap < car.bestLapMs)) car.bestLapMs = lap;
+      if (lap !== null && (car.bestLapMs === null || lap < car.bestLapMs))
+        car.bestLapMs = lap;
       car.passingCount = Math.max(car.passingCount + 1, car.laps);
       car.laps = Math.max(car.laps, car.passingCount);
-      const duplicateCount = competitorKeysByRegistration.get(car.registrationNumber)?.length || 1;
+      const duplicateCount =
+        competitorKeysByRegistration.get(car.registrationNumber)?.length || 1;
       car.ambiguousRegistrationNumber = duplicateCount > 1;
       const passingId = `${car.registrationKey}|${fields[3] || fields[2]}|${car.passingCount}`;
       if (!seenPassingIds.has(passingId)) {
@@ -294,14 +320,24 @@ export function createTimingState(options = {}) {
   }
 
   function snapshot() {
-    const sessionMode = configuredMode === 'auto' ? inferredMode : configuredMode;
-    const positionKey = sessionMode === 'race' ? 'racePosition' : 'practicePosition';
+    const sessionMode =
+      configuredMode === 'auto' ? inferredMode : configuredMode;
+    const positionKey =
+      sessionMode === 'race' ? 'racePosition' : 'practicePosition';
     const ordered = [...competitors.values()]
-      .filter((car) => car.racePosition || car.practicePosition || car.lastLapMs !== null)
+      .filter(
+        (car) =>
+          car.racePosition || car.practicePosition || car.lastLapMs !== null,
+      )
       .sort((a, b) => {
-        const bestLapDifference = (a.bestLapMs ?? Number.MAX_SAFE_INTEGER) - (b.bestLapMs ?? Number.MAX_SAFE_INTEGER);
+        const bestLapDifference =
+          (a.bestLapMs ?? Number.MAX_SAFE_INTEGER) -
+          (b.bestLapMs ?? Number.MAX_SAFE_INTEGER);
         if (bestLapDifference !== 0) return bestLapDifference;
-        return (a[positionKey] || Number.MAX_SAFE_INTEGER) - (b[positionKey] || Number.MAX_SAFE_INTEGER);
+        return (
+          (a[positionKey] || Number.MAX_SAFE_INTEGER) -
+          (b[positionKey] || Number.MAX_SAFE_INTEGER)
+        );
       });
     const leader = ordered[0];
 
@@ -318,8 +354,14 @@ export function createTimingState(options = {}) {
       timeOfDay,
       raceTime,
       initializedAt,
-      classes: [...classes.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.id - b.id),
-      groups: [...new Set([...competitors.values()].map((car) => car.groupName).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+      classes: [...classes.entries()]
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.id - b.id),
+      groups: [
+        ...new Set(
+          [...competitors.values()].map((car) => car.groupName).filter(Boolean),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
       settings: Object.fromEntries(settings),
       source: {
         protocol: 'RMonitor',
@@ -337,11 +379,14 @@ export function createTimingState(options = {}) {
         classNumber: car.classNumber,
         className: classNameFor(car.classNumber),
         position: index + 1,
+        racePosition: car.racePosition || 0,
         laps: car.laps,
         bestLapNumber: car.bestLapNumber,
         latestLapNumber: car.latestLapNumber,
         latestScoreType: car.latestScoreType,
-        ambiguousRegistrationNumber: (competitorKeysByRegistration.get(car.registrationNumber)?.length || 1) > 1,
+        ambiguousRegistrationNumber:
+          (competitorKeysByRegistration.get(car.registrationNumber)?.length ||
+            1) > 1,
         totalTime: formatLapTime(car.totalTimeMs),
         lastLap: formatLapTime(car.lastLapMs),
         bestLap: formatLapTime(car.bestLapMs),
@@ -374,12 +419,17 @@ export function createTimingState(options = {}) {
       additionalInfo: car.additionalInfo,
       classNumber: car.classNumber,
       className: classNameFor(car.classNumber),
-      ambiguousRegistrationNumber: (competitorKeysByRegistration.get(car.registrationNumber)?.length || 1) > 1,
+      ambiguousRegistrationNumber:
+        (competitorKeysByRegistration.get(car.registrationNumber)?.length ||
+          1) > 1,
     }));
   }
 
   function classNameFor(classNumber) {
-    return classes.get(classNumber) || (classNumber !== null ? `Class ${classNumber}` : '');
+    return (
+      classes.get(classNumber) ||
+      (classNumber !== null ? `Class ${classNumber}` : '')
+    );
   }
 
   return { apply, snapshot, drainPassings, drainRawRecords, registrations };
@@ -390,7 +440,11 @@ export function timeToMilliseconds(value) {
   const normalized = value.replace(/^\+/, '');
   const match = normalized.match(/^(\d+):(\d{2}):(\d{2})\.(\d{3})$/);
   if (!match) return null;
-  return (((Number(match[1]) * 60 + Number(match[2])) * 60 + Number(match[3])) * 1000) + Number(match[4]);
+  return (
+    ((Number(match[1]) * 60 + Number(match[2])) * 60 + Number(match[3])) *
+      1000 +
+    Number(match[4])
+  );
 }
 
 export function formatLapTime(milliseconds) {
@@ -405,7 +459,8 @@ export function formatLapTime(milliseconds) {
 
 function formatGap(leader, car) {
   if (!leader || leader === car) return '—';
-  if (leader.bestLapMs !== null && car.bestLapMs !== null) return `+${((car.bestLapMs - leader.bestLapMs) / 1000).toFixed(3)}`;
+  if (leader.bestLapMs !== null && car.bestLapMs !== null)
+    return `+${((car.bestLapMs - leader.bestLapMs) / 1000).toFixed(3)}`;
   return '';
 }
 
