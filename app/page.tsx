@@ -80,7 +80,7 @@ export default function Home() {
             Canyon Classic · September 11–13, 2026
           </span>
         </div>
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+        <div className="site-header-inner mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <div className="brand-lockup">
             <img
               src="/cvar-logo.png"
@@ -211,7 +211,7 @@ function TimingBoard({
   );
 
   return (
-    <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+    <div className="timing-shell mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
       {feedState === 'demo' && (
         <div className="demo-notice">
           <Radio aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
@@ -368,118 +368,174 @@ function TimingBoard({
         </div>
 
         {cars.length > 0 ? (
-          <div className="overflow-x-auto">
-            <Table className="timing-table">
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-16 px-4 font-mono text-xs uppercase tracking-wider text-muted-foreground sm:px-5">
-                    Pos
-                  </TableHead>
-                  <TableHead className="w-20 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    Car
-                  </TableHead>
-                  <TableHead className="min-w-[210px] font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    Driver
-                  </TableHead>
-                  <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground md:table-cell">
-                    Group
-                  </TableHead>
-                  <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">
-                    Class
-                  </TableHead>
-                  <TableHead className="text-right font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    Laps
-                  </TableHead>
-                  <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">
-                    Total time
-                  </TableHead>
-                  <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:table-cell">
-                    Last lap
-                  </TableHead>
-                  <TableHead className="pr-4 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:pr-5">
-                    <span className="xl:hidden">Best / gap</span>
-                    <span className="hidden xl:inline">Best lap</span>
-                  </TableHead>
-                  <TableHead className="hidden pr-5 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground xl:table-cell">
-                    Gap
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {cars.map((car) => (
-                  <TableRow key={car.registrationKey || car.registrationNumber}>
-                    <TableCell className="px-4 py-4 sm:px-5">
-                      <div className="flex items-center gap-2">
-                        <span className="position-number">
-                          {car.position || '—'}
-                        </span>
-                        {car.position === 1 && (
-                          <Flag
-                            aria-label="Session leader"
-                            className="leader-flag"
-                          />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="car-number">{car.number}</span>
-                    </TableCell>
-                    <TableCell className="py-4">
-                      <p className="font-semibold text-white">
-                        {car.driver || `Car ${car.number}`}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground md:hidden">
-                        {[car.groupName, car.className]
-                          .filter(Boolean)
-                          .join(' · ') || car.car}
-                      </p>
-                      {car.car && (
-                        <p className="mt-0.5 hidden text-xs text-muted-foreground md:block">
-                          {car.car}
-                        </p>
-                      )}
-                      {car.resultAdjustment && (
-                        <p className="mt-1 text-xs font-semibold text-amber-300">
-                          {formatResultAdjustment(car.resultAdjustment)}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell className="hidden text-slate-300 md:table-cell">
-                      {car.groupName || '—'}
-                    </TableCell>
-                    <TableCell className="hidden text-slate-300 lg:table-cell">
-                      {car.className || '—'}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-base tabular-nums">
-                      {car.laps}
-                    </TableCell>
-                    <TableCell className="hidden text-right font-mono text-base tabular-nums text-slate-300 lg:table-cell">
-                      {car.totalTime || '—'}
-                    </TableCell>
-                    <TableCell className="hidden text-right font-mono text-base tabular-nums text-slate-300 sm:table-cell">
-                      {car.lastLap || '—'}
-                    </TableCell>
-                    <TableCell className="best-lap pr-4 text-right sm:pr-5">
-                      {car.adjustedBestLap || car.bestLap || '—'}
-                      {car.adjustedBestLap && (
-                        <span className="mt-0.5 block text-[0.65rem] font-normal text-muted-foreground">
-                          raw {car.bestLap}
+          <>
+            <ol
+              className="mobile-timing-list"
+              aria-label="Live timing standings"
+            >
+              {cars.map((car) => (
+                <li
+                  key={car.registrationKey || car.registrationNumber}
+                  className={`mobile-driver-card ${car.position === 1 ? 'mobile-driver-leader' : ''}`}
+                >
+                  <div className="mobile-position">
+                    <span>Pos</span>
+                    <strong>{car.position || '—'}</strong>
+                  </div>
+                  <div className="mobile-driver-identity">
+                    <div>
+                      <span className="mobile-car-number">#{car.number}</span>
+                      {car.position === 1 && (
+                        <span className="mobile-leader-chip">
+                          <Flag aria-hidden="true" /> Leader
                         </span>
                       )}
-                      <span className="mt-1 block text-[0.7rem] font-semibold text-sky-300 xl:hidden">
-                        {car.position === 1
-                          ? 'Leader'
-                          : `Gap ${car.gap || '—'}`}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground xl:table-cell">
-                      {car.gap || '—'}
-                    </TableCell>
+                    </div>
+                    <strong>{car.driver || `Car ${car.number}`}</strong>
+                    <span>
+                      {[car.groupName, car.className]
+                        .filter(Boolean)
+                        .join(' · ') || 'Class not listed'}
+                    </span>
+                  </div>
+                  <div className="mobile-best-lap">
+                    <span>Best lap</span>
+                    <strong>{car.adjustedBestLap || car.bestLap || '—'}</strong>
+                    <small>
+                      {car.position === 1 ? 'Fastest' : car.gap || 'No gap'}
+                    </small>
+                  </div>
+                  <div className="mobile-driver-details">
+                    <span>
+                      <strong>{car.laps}</strong> laps
+                    </span>
+                    <span>
+                      Last <strong>{car.lastLap || '—'}</strong>
+                    </span>
+                  </div>
+                  {car.resultAdjustment && (
+                    <p className="mobile-adjustment">
+                      {formatResultAdjustment(car.resultAdjustment)}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ol>
+            <div className="desktop-timing-table overflow-x-auto">
+              <Table className="timing-table">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-16 px-4 font-mono text-xs uppercase tracking-wider text-muted-foreground sm:px-5">
+                      Pos
+                    </TableHead>
+                    <TableHead className="w-20 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                      Car
+                    </TableHead>
+                    <TableHead className="min-w-[210px] font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                      Driver
+                    </TableHead>
+                    <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground md:table-cell">
+                      Group
+                    </TableHead>
+                    <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">
+                      Class
+                    </TableHead>
+                    <TableHead className="text-right font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                      Laps
+                    </TableHead>
+                    <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">
+                      Total time
+                    </TableHead>
+                    <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:table-cell">
+                      Last lap
+                    </TableHead>
+                    <TableHead className="pr-4 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:pr-5">
+                      <span className="xl:hidden">Best / gap</span>
+                      <span className="hidden xl:inline">Best lap</span>
+                    </TableHead>
+                    <TableHead className="hidden pr-5 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground xl:table-cell">
+                      Gap
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {cars.map((car) => (
+                    <TableRow
+                      key={car.registrationKey || car.registrationNumber}
+                    >
+                      <TableCell className="px-4 py-4 sm:px-5">
+                        <div className="flex items-center gap-2">
+                          <span className="position-number">
+                            {car.position || '—'}
+                          </span>
+                          {car.position === 1 && (
+                            <Flag
+                              aria-label="Session leader"
+                              className="leader-flag"
+                            />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="car-number">{car.number}</span>
+                      </TableCell>
+                      <TableCell className="py-4">
+                        <p className="font-semibold text-white">
+                          {car.driver || `Car ${car.number}`}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground md:hidden">
+                          {[car.groupName, car.className]
+                            .filter(Boolean)
+                            .join(' · ') || car.car}
+                        </p>
+                        {car.car && (
+                          <p className="mt-0.5 hidden text-xs text-muted-foreground md:block">
+                            {car.car}
+                          </p>
+                        )}
+                        {car.resultAdjustment && (
+                          <p className="mt-1 text-xs font-semibold text-amber-300">
+                            {formatResultAdjustment(car.resultAdjustment)}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden text-slate-300 md:table-cell">
+                        {car.groupName || '—'}
+                      </TableCell>
+                      <TableCell className="hidden text-slate-300 lg:table-cell">
+                        {car.className || '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-base tabular-nums">
+                        {car.laps}
+                      </TableCell>
+                      <TableCell className="hidden text-right font-mono text-base tabular-nums text-slate-300 lg:table-cell">
+                        {car.totalTime || '—'}
+                      </TableCell>
+                      <TableCell className="hidden text-right font-mono text-base tabular-nums text-slate-300 sm:table-cell">
+                        {car.lastLap || '—'}
+                      </TableCell>
+                      <TableCell className="best-lap pr-4 text-right sm:pr-5">
+                        {car.adjustedBestLap || car.bestLap || '—'}
+                        {car.adjustedBestLap && (
+                          <span className="mt-0.5 block text-[0.65rem] font-normal text-muted-foreground">
+                            raw {car.bestLap}
+                          </span>
+                        )}
+                        <span className="mt-1 block text-[0.7rem] font-semibold text-sky-300 xl:hidden">
+                          {car.position === 1
+                            ? 'Leader'
+                            : `Gap ${car.gap || '—'}`}
+                        </span>
+                      </TableCell>
+                      <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground xl:table-cell">
+                        {car.gap || '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         ) : (
           <div className="grid min-h-64 place-items-center p-8 text-center">
             <div>
