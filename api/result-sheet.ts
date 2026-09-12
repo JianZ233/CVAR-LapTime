@@ -298,15 +298,14 @@ function drawClassificationPage({
   });
   const columns = [
     { label: 'Pos', x: 34, width: 22, align: 'right' as const },
-    { label: 'No.', x: 61, width: 27, align: 'left' as const },
-    { label: 'Driver', x: 93, width: 98, align: 'left' as const },
-    { label: 'Class', x: 196, width: 41, align: 'left' as const },
-    { label: 'Laps', x: 242, width: 28, align: 'right' as const },
-    { label: 'Total time', x: 275, width: 62, align: 'right' as const },
-    { label: 'Best Tm', x: 342, width: 53, align: 'right' as const },
-    { label: 'Result', x: 400, width: 53, align: 'right' as const },
-    { label: 'To prev.', x: 458, width: 49, align: 'right' as const },
-    { label: 'To lead', x: 512, width: 47, align: 'right' as const },
+    { label: 'No.', x: 61, width: 30, align: 'left' as const },
+    { label: 'Driver', x: 96, width: 125, align: 'left' as const },
+    { label: 'Class', x: 226, width: 48, align: 'left' as const },
+    { label: 'Laps', x: 279, width: 28, align: 'right' as const },
+    { label: 'Total time', x: 312, width: 68, align: 'right' as const },
+    { label: 'Best Tm', x: 385, width: 58, align: 'right' as const },
+    { label: 'To prev.', x: 448, width: 53, align: 'right' as const },
+    { label: 'To lead', x: 506, width: 53, align: 'right' as const },
   ];
   const tableTop = contentTop - 17;
   page.drawRectangle({
@@ -350,9 +349,6 @@ function drawClassificationPage({
       String(car.laps || 0),
       car.totalTime || '-',
       car.bestLap || '-',
-      ['DNF', 'DNS', 'DQ'].includes(car.resultAdjustment?.status || '')
-        ? '-'
-        : car.adjustedBestLap || car.bestLap || '-',
       car.gapToPrevious || '-',
       car.gapToLeader || '-',
     ];
@@ -364,8 +360,8 @@ function drawClassificationPage({
         rowY + 1.5,
         column.width,
         6.9,
-        cellIndex === 7 ? fonts.bold : fonts.regular,
-        cellIndex === 7 && car.bestLap ? NAVY : INK,
+        cellIndex === 6 ? fonts.bold : fonts.regular,
+        cellIndex === 6 && car.bestLap ? NAVY : INK,
         column.align,
       ),
     );
