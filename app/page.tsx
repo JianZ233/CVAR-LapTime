@@ -392,11 +392,12 @@ function TimingBoard({
               {cars.map((car) => (
                 <li
                   key={car.registrationKey || car.registrationNumber}
-                  className={`mobile-driver-card ${car.position === 1 ? 'mobile-driver-leader' : ''}`}
+                  className={`mobile-driver-card ${podiumCardClassName(car.position)}`}
                 >
                   <div className="mobile-position">
                     <span>Pos</span>
                     <strong>{car.position || '—'}</strong>
+                    <PodiumMark position={car.position} />
                     {showPositionMovement && (
                       <PositionMovement change={car.positionChange || 0} />
                     )}
@@ -493,11 +494,15 @@ function TimingBoard({
                   {cars.map((car) => (
                     <TableRow
                       key={car.registrationKey || car.registrationNumber}
+                      className={podiumRowClassName(car.position)}
                     >
                       <TableCell className="px-4 py-4 sm:px-5">
                         <div className="flex items-center gap-2">
-                          <span className="position-number">
-                            {car.position || '—'}
+                          <span className="position-stack">
+                            <span className="position-number">
+                              {car.position || '—'}
+                            </span>
+                            <PodiumMark position={car.position} />
                           </span>
                           {showPositionMovement && (
                             <PositionMovement
@@ -1055,6 +1060,34 @@ function PositionMovement({ change }: { change: number }) {
       <span>{amount}</span>
     </span>
   );
+}
+
+function PodiumMark({ position }: { position: number }) {
+  if (position < 1 || position > 3) return null;
+  const place = ['first', 'second', 'third'][position - 1];
+  return (
+    <span
+      className={`podium-mark podium-mark-${position}`}
+      role="img"
+      aria-label={`${place} place podium`}
+    >
+      <span className="podium-step podium-step-left" aria-hidden="true" />
+      <span className="podium-step podium-step-center" aria-hidden="true" />
+      <span className="podium-step podium-step-right" aria-hidden="true" />
+    </span>
+  );
+}
+
+function podiumCardClassName(position: number) {
+  return position >= 1 && position <= 3
+    ? `mobile-driver-podium mobile-driver-podium-${position}`
+    : '';
+}
+
+function podiumRowClassName(position: number) {
+  return position >= 1 && position <= 3
+    ? `desktop-driver-podium desktop-driver-podium-${position}`
+    : undefined;
 }
 
 function countdownTime(value: string, secondsElapsed: number) {
