@@ -76,6 +76,12 @@ const INK = rgb(0.06, 0.1, 0.12);
 const MUTED = rgb(0.36, 0.43, 0.47);
 const LINE = rgb(0.78, 0.8, 0.79);
 const ROW_SHADE = rgb(0.93, 0.93, 0.9);
+const PODIUM_GOLD = rgb(0.78, 0.58, 0.05);
+const PODIUM_GOLD_TINT = rgb(1, 0.95, 0.74);
+const PODIUM_SILVER = rgb(0.45, 0.51, 0.57);
+const PODIUM_SILVER_TINT = rgb(0.92, 0.94, 0.96);
+const PODIUM_BRONZE = rgb(0.58, 0.32, 0.15);
+const PODIUM_BRONZE_TINT = rgb(0.94, 0.84, 0.75);
 
 export async function GET(request: Request) {
   if (!redisIsConfigured())
@@ -332,7 +338,24 @@ function drawClassificationPage({
   const rowHeight = 14.8;
   rows.forEach((car, index) => {
     const rowY = tableTop - 17 - index * rowHeight;
-    if (index % 2 === 1)
+    const position = startPosition + index + 1;
+    const podium = podiumStyle(position);
+    if (podium) {
+      page.drawRectangle({
+        x: 28,
+        y: rowY - 2.5,
+        width: width - 56,
+        height: rowHeight,
+        color: podium.tint,
+      });
+      page.drawRectangle({
+        x: 28,
+        y: rowY - 2.5,
+        width: 3.5,
+        height: rowHeight,
+        color: podium.accent,
+      });
+    } else if (index % 2 === 1)
       page.drawRectangle({
         x: 28,
         y: rowY - 2.5,
@@ -340,7 +363,6 @@ function drawClassificationPage({
         height: rowHeight,
         color: ROW_SHADE,
       });
-    const position = startPosition + index + 1;
     const cells = [
       String(position),
       car.number || '-',
@@ -352,7 +374,20 @@ function drawClassificationPage({
       car.gapToPrevious || '-',
       car.gapToLeader || '-',
     ];
-    columns.forEach((column, cellIndex) =>
+    columns.forEach((column, cellIndex) => {
+      if (cellIndex === 0 && podium) {
+        drawPodiumMark(page, column.x, rowY - 0.4, podium.accent);
+        drawRight(
+          page,
+          cells[cellIndex],
+          column.x + column.width,
+          rowY + 1.5,
+          7.2,
+          fonts.bold,
+          podium.accent,
+        );
+        return;
+      }
       drawCell(
         page,
         cells[cellIndex],
@@ -360,11 +395,19 @@ function drawClassificationPage({
         rowY + 1.5,
         column.width,
         6.9,
-        cellIndex === 6 ? fonts.bold : fonts.regular,
-        cellIndex === 6 && car.bestLap ? NAVY : INK,
+        cellIndex === 2 && podium
+          ? fonts.bold
+          : cellIndex === 6
+            ? fonts.bold
+            : fonts.regular,
+        cellIndex === 6 && car.bestLap
+          ? NAVY
+          : cellIndex === 2 && podium
+            ? podium.accent
+            : INK,
         column.align,
-      ),
-    );
+      );
+    });
     page.drawLine({
       start: { x: 28, y: rowY - 2.5 },
       end: { x: width - 28, y: rowY - 2.5 },
@@ -1037,6 +1080,39 @@ function drawCheckers(page: PDFPage, x: number, y: number) {
         height: size,
         color: (row + column) % 2 === 0 ? rgb(1, 1, 1) : YELLOW,
       });
+}
+
+function podiumStyle(position: number) {
+  if (position === 1) return { accent: PODIUM_GOLD, tint: PODIUM_GOLD_TINT };
+  if (position === 2)
+    return { accent: PODIUM_SILVER, tint: PODIUM_SILVER_TINT };
+  if (position === 3)
+    return { accent: PODIUM_BRONZE, tint: PODIUM_BRONZE_TINT };
+  return null;
+}
+
+function drawPodiumMark(
+  page: PDFPage,
+  x: number,
+  y: number,
+  color: ReturnType<typeof rgb>,
+) {
+  const bars = [
+    { x: x + 0.5, height: 3.2 },
+    { x: x + 4, height: 6.2 },
+    { x: x + 7.5, height: 2.3 },
+  ];
+  bars.forEach((bar) =>
+    page.drawRectangle({
+      x: bar.x,
+      y,
+      width: 2.6,
+      height: bar.height,
+      color,
+      borderColor: color,
+      borderWidth: 0.3,
+    }),
+  );
 }
 
 function drawCell(
