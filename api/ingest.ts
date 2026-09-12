@@ -113,6 +113,7 @@ async function storeEnvelope(envelope: IngestEnvelope) {
   const eventPrefix = `cvar:event:${envelope.eventId}`;
   const sessionPrefix = `${eventPrefix}:session:${envelope.sessionId}`;
   const timestamp = Date.parse(envelope.snapshot.updatedAt) || Date.now();
+  const hasCars = envelope.snapshot.cars.length > 0;
   const flag = normalizeFlag(envelope.snapshot.flag);
   const previousFlagState = parseFlagState(
     await redisCommand(['GET', `${sessionPrefix}:flag-current`]),
@@ -131,38 +132,31 @@ async function storeEnvelope(envelope: IngestEnvelope) {
   const commands: Array<Array<string | number>> = [
     ['SET', 'cvar:live', JSON.stringify(storedSnapshot)],
     ['SET', 'cvar:live-session', envelope.sessionId],
-    ['SET', `${sessionPrefix}:latest`, JSON.stringify(storedSnapshot)],
     ['SET', `${sessionPrefix}:flag-current`, JSON.stringify(flagState)],
-    [
-      'HSET',
-      `${eventPrefix}:session-summaries`,
-      envelope.sessionId,
-      JSON.stringify({
-        runId: envelope.snapshot.runId || '',
-        runName: envelope.snapshot.runName,
-        flag,
-        groups: Array.isArray(envelope.snapshot.groups)
-          ? envelope.snapshot.groups.filter(
-              (group): group is string => typeof group === 'string',
-            )
-          : [],
-        carCount: envelope.snapshot.cars.length,
-        updatedAt: envelope.snapshot.updatedAt,
-      }),
-    ],
   ];
 
-  if (flagChanged) {
-    commands.push([
-      'ZADD',
-      `${sessionPrefix}:flag-history`,
-      Date.parse(flagStartedAt) || timestamp,
-      JSON.stringify(flagState),
-    ]);
-  }
-
-  if (envelope.sessionChanged) {
+  // Keep empty scoreboard frames live, but do not turn them into downloadable
+  // results or replace the last populated classification for a session.
+  if (hasCars) {
     commands.push(
+      ['SET', `${sessionPrefix}:latest`, JSON.stringify(storedSnapshot)],
+      [
+        'HSET',
+        `${eventPrefix}:session-summaries`,
+        envelope.sessionId,
+        JSON.stringify({
+          runId: envelope.snapshot.runId || '',
+          runName: envelope.snapshot.runName,
+          flag,
+          groups: Array.isArray(envelope.snapshot.groups)
+            ? envelope.snapshot.groups.filter(
+                (group): group is string => typeof group === 'string',
+              )
+            : [],
+          carCount: envelope.snapshot.cars.length,
+          updatedAt: envelope.snapshot.updatedAt,
+        }),
+      ],
       ['SADD', 'cvar:events', envelope.eventId],
       [
         'ZADD',
@@ -181,6 +175,15 @@ async function storeEnvelope(envelope: IngestEnvelope) {
         envelope.snapshot.updatedAt,
       ],
     );
+  }
+
+  if (flagChanged) {
+    commands.push([
+      'ZADD',
+      `${sessionPrefix}:flag-history`,
+      Date.parse(flagStartedAt) || timestamp,
+      JSON.stringify(flagState),
+    ]);
   }
 
   if (envelope.registrations.length) {

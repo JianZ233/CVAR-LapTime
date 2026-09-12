@@ -122,6 +122,13 @@ function parseSummary(value: unknown) {
     const parsed = JSON.parse(value) as Record<string, unknown>;
     const snapshot = parsed as Record<string, unknown>;
     if (typeof snapshot.runName !== 'string') return null;
+    const carCount =
+      typeof snapshot.carCount === 'number'
+        ? snapshot.carCount
+        : Array.isArray(snapshot.cars)
+          ? snapshot.cars.length
+          : 0;
+    if (!Number.isFinite(carCount) || carCount <= 0) return null;
     return {
       runId: typeof snapshot.runId === 'string' ? snapshot.runId : '',
       runName: snapshot.runName,
@@ -131,12 +138,7 @@ function parseSummary(value: unknown) {
             (group): group is string => typeof group === 'string',
           )
         : [],
-      carCount:
-        typeof snapshot.carCount === 'number'
-          ? snapshot.carCount
-          : Array.isArray(snapshot.cars)
-            ? snapshot.cars.length
-            : 0,
+      carCount,
       updatedAt:
         typeof snapshot.updatedAt === 'string' ? snapshot.updatedAt : '',
     };

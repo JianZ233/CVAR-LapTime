@@ -12,7 +12,7 @@ Upstash Redis stores:
 - every raw RMonitor record, including unrecognized commands, so later parser improvements can recover fields that are not understood yet; and
 - an event index and session start times.
 
-There is no automatic expiration on archived sessions, passings, or raw records. Repeated `$F`, `$G`, and `$H` scoreboard refreshes update the current classification, while their original protocol lines remain available in the private raw archive. The relay also writes a second raw backup under `recordings/` by default. This directory is Git-ignored because the files can contain driver names, transponder identifiers, and other registration data.
+There is no automatic expiration on archived sessions, passings, or raw records. A session is added to the results index only after at least one car appears; empty scoreboard frames remain available to the live feed and private raw archive without creating zero-car result sheets. Repeated `$F`, `$G`, and `$H` scoreboard refreshes update the current classification, while their original protocol lines remain available in the private raw archive. The relay also writes a second raw backup under `recordings/` by default. This directory is Git-ignored because the files can contain driver names, transponder identifiers, and other registration data.
 
 The feed's `$A` and `$COMP` field called “nationality” contains CVAR's group number in the tested event (`6` means `Group 6`). `$C` records are a separate class table (`FF1`, `FF2`, `FC`, and so on). The public timing board displays them separately instead of treating the group as a car description.
 
