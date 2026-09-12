@@ -7,6 +7,8 @@ import {
   Download,
   FileText,
   Flag,
+  ListFilter,
+  MousePointerClick,
   Radio,
   RotateCcw,
   TimerReset,
@@ -255,44 +257,57 @@ function TimingBoard({
           </div>
         </div>
         <div className="session-picker">
-          <div>
-            <p>Timing session</p>
-            <span>Live feed or saved results</span>
+          <div className="session-picker-heading">
+            <span className="session-picker-icon" aria-hidden="true">
+              <ListFilter />
+            </span>
+            <div>
+              <p>Switch group or session</p>
+              <span>Choose live timing or a saved result</span>
+            </div>
           </div>
-          <Select
-            value={selectedSessionId}
-            onValueChange={(value) => onSessionChange(value || 'live')}
-          >
-            <SelectTrigger
-              aria-label="Choose timing session"
-              className="session-select"
+          <div className="session-selector">
+            <div className="session-selector-label">
+              <span>Now viewing</span>
+              <span>
+                <MousePointerClick aria-hidden="true" /> Tap to change
+              </span>
+            </div>
+            <Select
+              value={selectedSessionId}
+              onValueChange={(value) => onSessionChange(value || 'live')}
             >
-              <SelectValue>
-                {selectedSessionId === 'live'
-                  ? `Live · ${formatSessionName(liveSession?.runName || 'Current session')}`
-                  : formatSessionName(
-                      selectedSession?.runName || snapshot.runName,
-                    )}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent
-              align="end"
-              className="min-w-72 border-white/10 bg-[#102838] text-white"
-            >
-              <SelectItem value="live">
-                Live ·{' '}
-                {formatSessionName(liveSession?.runName || 'Current session')}
-              </SelectItem>
-              {sessions
-                .filter((session) => session.id !== liveSessionId)
-                .map((session) => (
-                  <SelectItem key={session.id} value={session.id}>
-                    {formatSessionName(session.runName)} ·{' '}
-                    {sessionClockTime(session.startedAt)}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+              <SelectTrigger
+                aria-label="Switch group or timing session"
+                className="session-select"
+              >
+                <SelectValue>
+                  {selectedSessionId === 'live'
+                    ? `Live · ${formatSessionName(liveSession?.runName || 'Current session')}`
+                    : formatSessionName(
+                        selectedSession?.runName || snapshot.runName,
+                      )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent
+                align="end"
+                className="min-w-72 border-white/10 bg-[#102838] text-white"
+              >
+                <SelectItem value="live">
+                  Live ·{' '}
+                  {formatSessionName(liveSession?.runName || 'Current session')}
+                </SelectItem>
+                {sessions
+                  .filter((session) => session.id !== liveSessionId)
+                  .map((session) => (
+                    <SelectItem key={session.id} value={session.id}>
+                      {formatSessionName(session.runName)} ·{' '}
+                      {sessionClockTime(session.startedAt)}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
           <a
             className="current-result-download"
             href={resultSheetHref(
