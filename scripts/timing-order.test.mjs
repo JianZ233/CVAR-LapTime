@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  raceGapAtLastLap,
   rankSnapshotForSession,
   resultOrderForSession,
 } from '../lib/timing.ts';
@@ -21,6 +22,8 @@ function snapshot(runName, sessionMode = 'practice') {
         number: '1',
         position: 2,
         racePosition: 1,
+        laps: 8,
+        totalTime: '16:10.000',
         bestLap: '2:03.000',
         gap: '',
       },
@@ -29,6 +32,8 @@ function snapshot(runName, sessionMode = 'practice') {
         number: '2',
         position: 1,
         racePosition: 2,
+        laps: 8,
+        totalTime: '16:12.500',
         bestLap: '2:01.500',
         gap: '',
       },
@@ -45,6 +50,10 @@ test('all race results use official POS order', () => {
   assert.deepEqual(
     result.cars.map((car) => car.registrationNumber),
     ['R1', 'R2'],
+  );
+  assert.deepEqual(
+    result.cars.map((car) => car.gap),
+    ['—', '+2.500'],
   );
 });
 
@@ -97,4 +106,21 @@ test('recovers POS from archived RMonitor race records', () => {
     JSON.stringify({ command: '$G', fields: ['$G', '1', 'R2'] }),
   ]);
   assert.deepEqual(positions, { R1: 2, R2: 1 });
+});
+
+test('race gaps use elapsed time at the last completed lap', () => {
+  assert.equal(
+    raceGapAtLastLap(
+      { laps: 8, totalTime: '16:10.000' },
+      { laps: 8, totalTime: '16:12.500' },
+    ),
+    '+2.500',
+  );
+  assert.equal(
+    raceGapAtLastLap(
+      { laps: 8, totalTime: '16:10.000' },
+      { laps: 7, totalTime: '14:05.000' },
+    ),
+    '+1 lap',
+  );
 });

@@ -242,6 +242,7 @@ export function rankSnapshotForSession(
     );
   });
   const fastestTime = Math.min(...ranked.map(adjustedLapMilliseconds));
+  const raceLeader = ranked[0];
 
   return {
     ...snapshot,
@@ -257,11 +258,17 @@ export function rankSnapshotForSession(
             ? millisecondsToLapTime(carTime)
             : undefined,
         gap:
-          carTime === fastestTime
-            ? '—'
-            : hasGap
-              ? `+${((carTime - fastestTime) / 1000).toFixed(3)}`
-              : '',
+          resultOrder === 'position'
+            ? index === 0
+              ? '—'
+              : raceLeader
+                ? raceGapAtLastLap(raceLeader, car)
+                : ''
+            : carTime === fastestTime
+              ? '—'
+              : hasGap
+                ? `+${((carTime - fastestTime) / 1000).toFixed(3)}`
+                : '',
       };
     }),
   };
@@ -292,6 +299,34 @@ function millisecondsToLapTime(value: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds - minutes * 60;
   return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
+}
+
+export function raceGapAtLastLap(
+  ahead: Pick<TimingCar, 'laps' | 'totalTime'>,
+  behind: Pick<TimingCar, 'laps' | 'totalTime'>,
+) {
+  const lapDifference = safeLaps(ahead.laps) - safeLaps(behind.laps);
+  if (lapDifference > 0)
+    return `+${lapDifference} ${lapDifference === 1 ? 'lap' : 'laps'}`;
+  if (lapDifference < 0) return '';
+
+  const aheadTime = lapTimeToMilliseconds(ahead.totalTime);
+  const behindTime = lapTimeToMilliseconds(behind.totalTime);
+  if (!Number.isFinite(aheadTime) || !Number.isFinite(behindTime)) return '';
+  const difference = behindTime - aheadTime;
+  return difference >= 0 ? formatElapsedGap(difference) : '';
+}
+
+function safeLaps(value: number) {
+  return Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function formatElapsedGap(milliseconds: number) {
+  const totalSeconds = milliseconds / 1_000;
+  if (totalSeconds < 60) return `+${totalSeconds.toFixed(3)}`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `+${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
 }
 
 export function formatSessionName(value: string) {

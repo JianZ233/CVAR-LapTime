@@ -14,6 +14,7 @@ import {
   readRacePositions,
   snapshotUsesRacePositions,
 } from './_race_positions.js';
+import { raceGapAtLastLap } from '../lib/timing.js';
 
 type ResultCar = {
   registrationKey: string;
@@ -290,7 +291,7 @@ function drawClassificationPage({
     label:
       resultOrderForSession(snapshot.runName, snapshot.sessionMode) ===
       'position'
-        ? 'RACE POSITION ORDER'
+        ? 'RACE POS / LAST-LAP GAPS'
         : 'ADJUSTED BEST-LAP ORDER',
     fonts,
     logo,
@@ -1142,6 +1143,7 @@ function rankCars(
   const leaderTime = ranked.length
     ? adjustedLapMilliseconds(ranked[0])
     : Number.POSITIVE_INFINITY;
+  const raceLeader = ranked[0];
   return ranked.map((car, index) => {
     const lapTime = adjustedLapMilliseconds(car);
     const previousTime =
@@ -1158,19 +1160,25 @@ function rankCars(
         ? millisecondsToLapTime(lapTime)
         : undefined,
       gapToPrevious:
-        resultOrder === 'position' ||
-        index === 0 ||
-        !Number.isFinite(previousTime) ||
-        !Number.isFinite(lapTime)
-          ? ''
-          : formatGap(lapTime - previousTime),
+        resultOrder === 'position'
+          ? index > 0
+            ? raceGapAtLastLap(ranked[index - 1], car)
+            : ''
+          : index === 0 ||
+              !Number.isFinite(previousTime) ||
+              !Number.isFinite(lapTime)
+            ? ''
+            : formatGap(lapTime - previousTime),
       gapToLeader:
-        resultOrder === 'position' ||
-        index === 0 ||
-        !Number.isFinite(leaderTime) ||
-        !Number.isFinite(lapTime)
-          ? ''
-          : formatGap(lapTime - leaderTime),
+        resultOrder === 'position'
+          ? index > 0 && raceLeader
+            ? raceGapAtLastLap(raceLeader, car)
+            : ''
+          : index === 0 ||
+              !Number.isFinite(leaderTime) ||
+              !Number.isFinite(lapTime)
+            ? ''
+            : formatGap(lapTime - leaderTime),
     };
   });
 }

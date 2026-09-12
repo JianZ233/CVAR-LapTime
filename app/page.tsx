@@ -355,7 +355,7 @@ function TimingBoard({
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {positionOrder
-                ? 'Race sessions are ordered by the POS feed'
+                ? 'Race gaps use elapsed time at the latest completed lap'
                 : 'Practice and timed sessions are ordered by best lap'}
             </p>
           </div>
@@ -414,11 +414,17 @@ function TimingBoard({
                     <span>Best lap</span>
                     <strong>{car.adjustedBestLap || car.bestLap || '—'}</strong>
                     <small>
-                      {car.gap === '—'
-                        ? 'Fastest lap'
-                        : car.gap
-                          ? `${car.gap} to fastest`
-                          : 'No lap gap'}
+                      {positionOrder
+                        ? car.position === 1
+                          ? 'Leader at last lap'
+                          : car.gap
+                            ? `${car.gap} to leader at last lap`
+                            : 'No race gap'
+                        : car.gap === '—'
+                          ? 'Fastest lap'
+                          : car.gap
+                            ? `${car.gap} to fastest`
+                            : 'No lap gap'}
                     </small>
                   </div>
                   <div className="mobile-driver-details">
@@ -466,11 +472,13 @@ function TimingBoard({
                       Last lap
                     </TableHead>
                     <TableHead className="pr-4 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:pr-5">
-                      <span className="xl:hidden">Best / gap</span>
+                      <span className="xl:hidden">
+                        {positionOrder ? 'Best / race gap' : 'Best / gap'}
+                      </span>
                       <span className="hidden xl:inline">Best lap</span>
                     </TableHead>
                     <TableHead className="hidden pr-5 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground xl:table-cell">
-                      Gap
+                      {positionOrder ? 'Race gap' : 'Gap'}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -540,7 +548,7 @@ function TimingBoard({
                         <span className="mt-1 block text-[0.7rem] font-semibold text-sky-300 xl:hidden">
                           {car.position === 1
                             ? 'Leader'
-                            : `Gap ${car.gap || '—'}`}
+                            : `${positionOrder ? 'Race gap' : 'Gap'} ${car.gap || '—'}`}
                         </span>
                       </TableCell>
                       <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground xl:table-cell">
