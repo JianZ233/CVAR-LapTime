@@ -423,10 +423,10 @@ function TimingBoard({
                     <small>
                       {positionOrder
                         ? car.position === 1
-                          ? 'Leader at last lap'
+                          ? 'Leader'
                           : car.gap
-                            ? `${car.gap} to leader at last lap`
-                            : 'No race gap'
+                            ? `Gap ${car.gap}`
+                            : 'Gap —'
                         : car.gap === '—'
                           ? 'Fastest lap'
                           : car.gap
