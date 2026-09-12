@@ -178,3 +178,25 @@ test('preserves official race positions while ranking the feed by best lap', () 
     ],
   );
 });
+
+test('tracks race position movement between completed laps', () => {
+  const state = createTimingState({
+    sessionMode: 'race',
+    streamId: 'position-movement',
+  });
+  [
+    '$G,1,"R1",1,"00:02:00.000"',
+    '$G,2,"R2",1,"00:02:01.000"',
+    '$G,3,"R3",1,"00:02:02.000"',
+    '$G,1,"R2",2,"00:04:00.000"',
+    '$G,2,"R3",2,"00:04:01.000"',
+    '$G,3,"R1",2,"00:04:02.000"',
+  ].forEach((line) => state.apply(line));
+
+  const changes = Object.fromEntries(
+    state
+      .snapshot()
+      .cars.map((car) => [car.registrationNumber, car.positionChange]),
+  );
+  assert.deepEqual(changes, { R1: -2, R2: 1, R3: 1 });
+});

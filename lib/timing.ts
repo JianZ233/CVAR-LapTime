@@ -9,6 +9,7 @@ export type TimingCar = {
   className: string;
   position: number;
   racePosition?: number;
+  positionChange?: number;
   laps: number;
   bestLapNumber: number;
   latestLapNumber: number;

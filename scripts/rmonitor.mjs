@@ -78,6 +78,9 @@ export function createTimingState(options = {}) {
         classNumber: null,
         laps: 0,
         racePosition: 0,
+        racePositionLap: 0,
+        lastCompletedLapPosition: 0,
+        positionChange: 0,
         practicePosition: 0,
         bestLapNumber: 0,
         latestLapNumber: 0,
@@ -241,8 +244,17 @@ export function createTimingState(options = {}) {
     if (command === '$G') {
       const position = numberOrZero(fields[1]);
       const car = competitorForSeries(command, fields[2], position);
+      const laps = numberOrZero(fields[3]);
+      if (position > 0 && laps > car.racePositionLap) {
+        car.positionChange =
+          car.racePositionLap > 0 && car.lastCompletedLapPosition > 0
+            ? car.lastCompletedLapPosition - position
+            : 0;
+        car.lastCompletedLapPosition = position;
+        car.racePositionLap = laps;
+      }
       car.racePosition = position;
-      car.laps = numberOrZero(fields[3]);
+      car.laps = laps;
       car.totalTimeMs = scoreTimeToMilliseconds(fields[4]);
       return true;
     }
@@ -380,6 +392,7 @@ export function createTimingState(options = {}) {
         className: classNameFor(car.classNumber),
         position: index + 1,
         racePosition: car.racePosition || 0,
+        positionChange: car.positionChange || 0,
         laps: car.laps,
         bestLapNumber: car.bestLapNumber,
         latestLapNumber: car.latestLapNumber,

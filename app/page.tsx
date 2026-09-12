@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
   CalendarDays,
   Clock3,
   Download,
@@ -211,6 +213,8 @@ function TimingBoard({
     snapshot.sessionMode,
   );
   const positionOrder = resultOrder === 'position';
+  const showPositionMovement =
+    positionOrder && feedState !== 'history' && !raceIsFinished(snapshot.flag);
   const liveSession = sessions.find((session) => session.id === liveSessionId);
   const selectedSession = sessions.find(
     (session) => session.id === selectedSessionId,
@@ -393,6 +397,9 @@ function TimingBoard({
                   <div className="mobile-position">
                     <span>Pos</span>
                     <strong>{car.position || '—'}</strong>
+                    {showPositionMovement && (
+                      <PositionMovement change={car.positionChange || 0} />
+                    )}
                   </div>
                   <div className="mobile-driver-identity">
                     <div>
@@ -492,6 +499,11 @@ function TimingBoard({
                           <span className="position-number">
                             {car.position || '—'}
                           </span>
+                          {showPositionMovement && (
+                            <PositionMovement
+                              change={car.positionChange || 0}
+                            />
+                          )}
                           {car.position === 1 && (
                             <Flag
                               aria-label="Session leader"
@@ -1016,6 +1028,33 @@ function flagClassName(value: string) {
   if (/finish|checkered|chequered/.test(flag)) return 'flag-checkered';
   if (flag.includes('green')) return 'flag-green';
   return 'flag-inactive';
+}
+
+function raceIsFinished(value: string) {
+  const flag = value.trim().toLowerCase();
+  return flag === 'not active' || /finish|checkered|chequered/.test(flag);
+}
+
+function PositionMovement({ change }: { change: number }) {
+  if (!change) return null;
+  const gained = change > 0;
+  const amount = Math.abs(change);
+  const label = `${gained ? 'Gained' : 'Lost'} ${amount} ${amount === 1 ? 'position' : 'positions'} since the last lap`;
+
+  return (
+    <span
+      className={`position-movement ${gained ? 'position-movement-up' : 'position-movement-down'}`}
+      aria-label={label}
+      title={label}
+    >
+      {gained ? (
+        <ArrowUp aria-hidden="true" />
+      ) : (
+        <ArrowDown aria-hidden="true" />
+      )}
+      <span>{amount}</span>
+    </span>
+  );
 }
 
 function countdownTime(value: string, secondsElapsed: number) {

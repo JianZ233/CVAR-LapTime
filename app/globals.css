@@ -708,6 +708,40 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .position-movement {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.08rem;
+    min-width: 1.8rem;
+    justify-content: center;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    padding: 0.2rem 0.34rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 900;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .position-movement svg {
+    width: 0.82rem;
+    height: 0.82rem;
+    stroke-width: 3.2;
+  }
+
+  .position-movement-up {
+    border-color: rgb(74 222 128 / 0.46);
+    background: rgb(34 197 94 / 0.14);
+    color: #76ee9e;
+  }
+
+  .position-movement-down {
+    border-color: rgb(248 113 113 / 0.5);
+    background: rgb(239 68 68 / 0.14);
+    color: #ff8585;
+  }
+
   .leader-flag {
     width: 0.9rem;
     height: 0.9rem;
@@ -1489,7 +1523,7 @@
       border-right: 1px solid rgb(143 202 236 / 0.16);
       padding-right: 0.65rem;
     }
-    .mobile-position span,
+    .mobile-position > span:first-child,
     .mobile-best-lap > span {
       color: #9db2c0;
       font-size: 0.66rem;
@@ -1503,6 +1537,20 @@
       font-family: var(--font-mono);
       font-size: 1.45rem;
       line-height: 1;
+    }
+    .mobile-position .position-movement {
+      margin-top: 0.4rem;
+      padding: 0.2rem 0.3rem;
+      font-size: 0.7rem;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .mobile-position .position-movement span {
+      color: inherit;
+      font-size: inherit;
+      font-weight: inherit;
+      letter-spacing: 0;
+      text-transform: none;
     }
     .mobile-driver-identity {
       min-width: 0;

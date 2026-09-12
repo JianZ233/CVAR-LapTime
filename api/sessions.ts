@@ -223,6 +223,7 @@ function sanitizeCar(value: unknown, racePositions: Record<string, number>) {
     className: stringValue(car.className),
     position: numberValue(car.position),
     racePosition: racePositionForCar(car, racePositions),
+    positionChange: numberValue(car.positionChange),
     laps: numberValue(car.laps),
     bestLapNumber: numberValue(car.bestLapNumber),
     latestLapNumber: numberValue(car.latestLapNumber),
