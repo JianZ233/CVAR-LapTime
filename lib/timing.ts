@@ -209,7 +209,7 @@ export function rankSnapshotForSession(
     snapshot.runName,
     snapshot.sessionMode,
   );
-  const ranked = [...snapshot.cars].sort((left, right) => {
+  const ranked = deduplicateDriverEntries(snapshot.cars).sort((left, right) => {
     const leftStatus = resultStatusOrder(left.resultAdjustment?.status);
     const rightStatus = resultStatusOrder(right.resultAdjustment?.status);
     if (leftStatus !== rightStatus) return leftStatus - rightStatus;
@@ -274,6 +274,65 @@ export function rankSnapshotForSession(
       };
     }),
   };
+}
+
+export function deduplicateDriverEntries<
+  T extends {
+    driver?: string;
+    laps?: number;
+    totalTime?: string;
+    bestLap?: string;
+    latestLapNumber?: number;
+  },
+>(cars: T[]): T[] {
+  const selectedByDriver = new Map<string, T>();
+
+  for (const car of cars) {
+    const driverKey = normalizeDriverName(car.driver);
+    if (!driverKey) continue;
+    const selected = selectedByDriver.get(driverKey);
+    if (!selected || compareTimingCompleteness(car, selected) >= 0)
+      selectedByDriver.set(driverKey, car);
+  }
+
+  return cars.filter((car) => {
+    const driverKey = normalizeDriverName(car.driver);
+    return !driverKey || selectedByDriver.get(driverKey) === car;
+  });
+}
+
+function compareTimingCompleteness(
+  left: {
+    laps?: number;
+    totalTime?: string;
+    bestLap?: string;
+    latestLapNumber?: number;
+  },
+  right: {
+    laps?: number;
+    totalTime?: string;
+    bestLap?: string;
+    latestLapNumber?: number;
+  },
+) {
+  return (
+    safeTimingNumber(left.laps) - safeTimingNumber(right.laps) ||
+    safeTimingNumber(left.latestLapNumber) -
+      safeTimingNumber(right.latestLapNumber) ||
+    Number(Boolean(left.totalTime)) - Number(Boolean(right.totalTime)) ||
+    Number(Boolean(left.bestLap)) - Number(Boolean(right.bestLap))
+  );
+}
+
+function normalizeDriverName(value?: string) {
+  return String(value || '')
+    .trim()
+    .toLocaleLowerCase('en-US')
+    .replace(/\s+/g, ' ');
+}
+
+function safeTimingNumber(value?: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 function officialPosition(car: TimingCar) {

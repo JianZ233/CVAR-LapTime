@@ -18,6 +18,8 @@ The feed's `$A` and `$COMP` field called “nationality” contains CVAR's group
 
 Orbits may publish the same registration number for more than one named driver. The parser keeps each different driver/transponder as a separate competitor and assigns display suffixes (`64`, `64a`, `64b`) when the transmitted car numbers collide. The original transmitted number remains in `sourceNumber` in the private registration and passing archives.
 
+When a car number is edited during an active Orbits session, Orbits may retain both the old and new registrations for the same named driver. The public classification keeps only that driver's most complete timing row (highest lap count, then latest completed-lap data) and preserves the full transmitted number, including meaningful suffixes such as `17a`, `64bk`, or `83a`. Different drivers are never combined merely because their car numbers share the same numeric base.
+
 The archive API is intentionally private. Send the same bearer secret used by the relay:
 
 ```text

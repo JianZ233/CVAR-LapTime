@@ -14,7 +14,7 @@ import {
   readRacePositions,
   snapshotUsesRacePositions,
 } from './_race_positions.js';
-import { raceGapAtLastLap } from '../lib/timing.js';
+import { deduplicateDriverEntries, raceGapAtLastLap } from '../lib/timing.js';
 
 type ResultCar = {
   registrationKey: string;
@@ -197,15 +197,25 @@ export async function createResultSheet(
     snapshot.runName,
     snapshot.sessionMode,
   );
-  const cars = rankCars(snapshot.cars, adjustments, resultOrder);
+  const cars = rankCars(
+    deduplicateDriverEntries(snapshot.cars),
+    adjustments,
+    resultOrder,
+  );
+  const selectedKeys = new Set(
+    cars.map((car) => car.registrationKey || car.registrationNumber),
+  );
+  const selectedPassings = passings.filter((passing) =>
+    selectedKeys.has(passing.registrationKey || passing.registrationNumber),
+  );
   const classificationPages = chunk(cars, 34);
   if (!classificationPages.length) classificationPages.push([]);
   const penaltyPages = chunk(
     cars.filter((car) => Boolean(car.resultAdjustment)),
     18,
   );
-  const lapPages = planLapBreakdownPages(cars, passings);
-  const chartPages = planLapChartPages(passings);
+  const lapPages = planLapBreakdownPages(cars, selectedPassings);
+  const chartPages = planLapChartPages(selectedPassings);
   const totalPages =
     classificationPages.length +
     penaltyPages.length +
@@ -259,7 +269,7 @@ export async function createResultSheet(
       page,
       snapshot,
       cars,
-      passings,
+      passings: selectedPassings,
       lapNumbers,
       pageNumber,
       totalPages,

@@ -152,6 +152,27 @@ test('preserves duplicate Orbits registration numbers as separate competitors', 
   );
 });
 
+test('keeps the complete row when Orbits retains a driver under an old number', () => {
+  const state = createTimingState({
+    sessionMode: 'race',
+    streamId: 'renumbered-driver',
+  });
+  [
+    '$A,"64bk","64bk",1803412,"Ian","Schoen","6",1',
+    '$G,1,"64bk",10,"00:20:49.514"',
+    '$H,1,"64bk",5,"00:02:03.748"',
+    '$A,"64","64",1803412,"Ian","Schoen","6",1',
+    '$G,10,"64",1,"00:02:08.920"',
+    '$H,10,"64",1,"00:02:08.920"',
+  ].forEach((line) => state.apply(line));
+
+  const cars = state.snapshot().cars;
+  assert.equal(cars.length, 1);
+  assert.equal(cars[0].number, '64bk');
+  assert.equal(cars[0].laps, 10);
+  assert.equal(cars[0].totalTime, '20:49.514');
+});
+
 test('preserves official race positions while ranking the feed by best lap', () => {
   const state = createTimingState({
     sessionMode: 'race',

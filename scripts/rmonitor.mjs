@@ -336,7 +336,7 @@ export function createTimingState(options = {}) {
       configuredMode === 'auto' ? inferredMode : configuredMode;
     const positionKey =
       sessionMode === 'race' ? 'racePosition' : 'practicePosition';
-    const ordered = [...competitors.values()]
+    const ordered = deduplicateCompetitors([...competitors.values()])
       .filter(
         (car) =>
           car.racePosition || car.practicePosition || car.lastLapMs !== null,
@@ -494,6 +494,39 @@ function scoreTimeToMilliseconds(value) {
 function formatGroupName(value) {
   if (!value) return '';
   return /^\d+[a-z]?$/i.test(value) ? `Group ${value}` : value;
+}
+
+function deduplicateCompetitors(cars) {
+  const selectedByDriver = new Map();
+
+  for (const car of cars) {
+    const driverKey = normalizeDriverName(car.driver);
+    if (!driverKey) continue;
+    const selected = selectedByDriver.get(driverKey);
+    if (!selected || compareTimingCompleteness(car, selected) >= 0)
+      selectedByDriver.set(driverKey, car);
+  }
+
+  return cars.filter((car) => {
+    const driverKey = normalizeDriverName(car.driver);
+    return !driverKey || selectedByDriver.get(driverKey) === car;
+  });
+}
+
+function compareTimingCompleteness(left, right) {
+  return (
+    numberOrZero(left.laps) - numberOrZero(right.laps) ||
+    numberOrZero(left.latestLapNumber) - numberOrZero(right.latestLapNumber) ||
+    Number(left.totalTimeMs !== null) - Number(right.totalTimeMs !== null) ||
+    Number(left.bestLapMs !== null) - Number(right.bestLapMs !== null)
+  );
+}
+
+function normalizeDriverName(value) {
+  return String(value || '')
+    .trim()
+    .toLocaleLowerCase('en-US')
+    .replace(/\s+/g, ' ');
 }
 
 function alphabeticSuffix(index) {

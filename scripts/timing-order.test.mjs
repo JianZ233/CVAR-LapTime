@@ -75,6 +75,111 @@ test('practice and qualifying results use best-lap order', () => {
   );
 });
 
+test('keeps the complete entry after a driver car-number change', () => {
+  const result = rankSnapshotForSession({
+    ...snapshot('Gp6-R3=Race 3', 'race'),
+    cars: [
+      {
+        registrationNumber: '64bk',
+        number: '64bk',
+        driver: 'Ian Schoen',
+        position: 1,
+        racePosition: 1,
+        laps: 10,
+        latestLapNumber: 10,
+        totalTime: '20:49.514',
+        bestLap: '2:03.748',
+        gap: '',
+      },
+      {
+        registrationNumber: '64',
+        number: '64',
+        driver: ' Ian   SCHOEN ',
+        position: 10,
+        racePosition: 10,
+        laps: 1,
+        latestLapNumber: 1,
+        totalTime: '2:08.920',
+        bestLap: '2:08.920',
+        gap: '',
+      },
+    ],
+  });
+
+  assert.equal(result.cars.length, 1);
+  assert.equal(result.cars[0].number, '64bk');
+  assert.equal(result.cars[0].laps, 10);
+  assert.equal(result.cars[0].totalTime, '20:49.514');
+});
+
+test('keeps same-base car numbers when the drivers differ', () => {
+  const result = rankSnapshotForSession({
+    ...snapshot('Gp1-R1=Race 1', 'race'),
+    cars: [
+      {
+        registrationNumber: '83',
+        number: '83',
+        driver: 'Brian Rowlings',
+        position: 11,
+        racePosition: 11,
+        laps: 7,
+        totalTime: '18:00.664',
+        bestLap: '2:31.295',
+        gap: '',
+      },
+      {
+        registrationNumber: '83a',
+        number: '83a',
+        driver: 'Gene Hassell',
+        position: 14,
+        racePosition: 14,
+        laps: 5,
+        totalTime: '12:08.199',
+        bestLap: '2:24.531',
+        gap: '',
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.cars.map((car) => car.number),
+    ['83', '83a'],
+  );
+});
+
+test('prefers the later Orbits entry when duplicate drivers have no laps', () => {
+  const result = rankSnapshotForSession({
+    ...snapshot('Gp6-R3=Race 3', 'race'),
+    cars: [
+      {
+        registrationNumber: '16',
+        number: '16',
+        driver: 'Todd Strong',
+        position: 36,
+        racePosition: 36,
+        laps: 0,
+        totalTime: '',
+        bestLap: '',
+        gap: '',
+      },
+      {
+        registrationNumber: '16b',
+        number: '16b',
+        driver: 'Todd Strong',
+        position: 37,
+        racePosition: 37,
+        laps: 0,
+        totalTime: '',
+        bestLap: '',
+        gap: '',
+      },
+    ],
+  });
+
+  assert.equal(result.cars.length, 1);
+  assert.equal(result.cars[0].number, '16b');
+});
+
 test('hydrates POS captured by an already-running relay', () => {
   const positions = parseRacePositionHash(['R1', '2', 'R2', '1']);
   const result = hydrateRacePositions(
