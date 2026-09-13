@@ -14,6 +14,7 @@ import {
   readRacePositions,
   snapshotUsesRacePositions,
 } from './_race_positions.js';
+import { applyCvarRacePoints } from '../lib/race-points.js';
 import { deduplicateDriverEntries, raceGapAtLastLap } from '../lib/timing.js';
 
 type ResultCar = {
@@ -197,11 +198,15 @@ export async function createResultSheet(
     snapshot.runName,
     snapshot.sessionMode,
   );
-  const cars = rankCars(
+  const rankedCars = rankCars(
     deduplicateDriverEntries(snapshot.cars),
     adjustments,
     resultOrder,
   );
+  const cars =
+    resultOrder === 'position'
+      ? applyCvarRacePoints(snapshot.runName, rankedCars)
+      : rankedCars;
   const selectedKeys = new Set(
     cars.map((car) => car.registrationKey || car.registrationNumber),
   );
