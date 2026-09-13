@@ -126,26 +126,6 @@ export default function Home() {
       </header>
 
       <main>
-        <div className="timing-service-alert" role="status">
-          <div className="timing-service-alert-inner">
-            <div className="timing-service-alert-copy">
-              <Clock3 aria-hidden="true" />
-              <p>
-                <strong>Live timing is connected.</strong> Group 6 Race 4
-                results are temporarily unavailable here and will be restored
-                after Group 1 Race 4 finishes.
-              </p>
-            </div>
-            <a
-              href="https://www.race-monitor.com/Live/Race/169801"
-              target="_blank"
-              rel="noreferrer"
-            >
-              View Group 6 on Race Monitor
-              <span aria-hidden="true">↗</span>
-            </a>
-          </div>
-        </div>
         {activeView === 'timing' ? (
           <TimingBoard
             snapshot={snapshot}
