@@ -126,6 +126,25 @@ export default function Home() {
       </header>
 
       <main>
+        <div className="timing-service-alert" role="alert">
+          <div className="timing-service-alert-inner">
+            <div className="timing-service-alert-copy">
+              <WifiOff aria-hidden="true" />
+              <p>
+                <strong>Local timing feed temporarily unavailable.</strong>{' '}
+                Follow the race live on Race Monitor.
+              </p>
+            </div>
+            <a
+              href="https://www.race-monitor.com/Live/Race/169801"
+              target="_blank"
+              rel="noreferrer"
+            >
+              View live timing
+              <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
         {activeView === 'timing' ? (
           <TimingBoard
             snapshot={snapshot}

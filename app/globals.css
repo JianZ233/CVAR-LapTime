@@ -215,6 +215,78 @@
 }
 
 @layer components {
+  .timing-service-alert {
+    border-bottom: 1px solid rgb(251 146 60 / 0.42);
+    background: #7c2d12;
+    color: #fff7ed;
+  }
+
+  .timing-service-alert-inner {
+    display: flex;
+    width: min(100%, 1500px);
+    min-height: 58px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-inline: auto;
+    padding: 0.7rem 1rem;
+  }
+
+  .timing-service-alert-copy {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+
+  .timing-service-alert-copy svg {
+    width: 1.2rem;
+    height: 1.2rem;
+    flex: none;
+    color: #fdba74;
+  }
+
+  .timing-service-alert a {
+    display: inline-flex;
+    min-height: 2.5rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: 1px solid rgb(255 247 237 / 0.45);
+    border-radius: 999px;
+    background: #fff7ed;
+    padding: 0.55rem 0.95rem;
+    color: #7c2d12;
+    font-size: 0.875rem;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .timing-service-alert a:hover {
+    background: white;
+  }
+
+  @media (min-width: 640px) {
+    .timing-service-alert-inner {
+      padding-inline: 1.5rem;
+    }
+  }
+
+  @media (max-width: 639px) {
+    .timing-service-alert-inner {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 0.65rem;
+      padding-block: 0.8rem;
+    }
+
+    .timing-service-alert a {
+      width: 100%;
+    }
+  }
+
   .demo-notice {
     display: flex;
     align-items: flex-start;
