@@ -30,6 +30,7 @@ type ResultCar = {
   totalTime: string;
   bestLap: string;
   gap: string;
+  points: number | null;
   gapToPrevious?: string;
   gapToLeader?: string;
   adjustedBestLap?: string;
@@ -302,17 +303,33 @@ function drawClassificationPage({
     fonts,
     logo,
   });
-  const columns = [
-    { label: 'Pos', x: 34, width: 22, align: 'right' as const },
-    { label: 'No.', x: 61, width: 30, align: 'left' as const },
-    { label: 'Driver', x: 96, width: 125, align: 'left' as const },
-    { label: 'Class', x: 226, width: 48, align: 'left' as const },
-    { label: 'Laps', x: 279, width: 28, align: 'right' as const },
-    { label: 'Total time', x: 312, width: 68, align: 'right' as const },
-    { label: 'Best Tm', x: 385, width: 58, align: 'right' as const },
-    { label: 'To prev.', x: 448, width: 53, align: 'right' as const },
-    { label: 'To lead', x: 506, width: 53, align: 'right' as const },
-  ];
+  const showPoints =
+    resultOrderForSession(snapshot.runName, snapshot.sessionMode) ===
+    'position';
+  const columns = showPoints
+    ? [
+        { label: 'Pos', x: 34, width: 22, align: 'right' as const },
+        { label: 'No.', x: 61, width: 26, align: 'left' as const },
+        { label: 'Driver', x: 92, width: 102, align: 'left' as const },
+        { label: 'Class', x: 199, width: 42, align: 'left' as const },
+        { label: 'Laps', x: 246, width: 27, align: 'right' as const },
+        { label: 'Total time', x: 278, width: 60, align: 'right' as const },
+        { label: 'Best Tm', x: 343, width: 54, align: 'right' as const },
+        { label: 'Points', x: 402, width: 38, align: 'right' as const },
+        { label: 'To prev.', x: 445, width: 52, align: 'right' as const },
+        { label: 'To lead', x: 502, width: 57, align: 'right' as const },
+      ]
+    : [
+        { label: 'Pos', x: 34, width: 22, align: 'right' as const },
+        { label: 'No.', x: 61, width: 30, align: 'left' as const },
+        { label: 'Driver', x: 96, width: 125, align: 'left' as const },
+        { label: 'Class', x: 226, width: 48, align: 'left' as const },
+        { label: 'Laps', x: 279, width: 28, align: 'right' as const },
+        { label: 'Total time', x: 312, width: 68, align: 'right' as const },
+        { label: 'Best Tm', x: 385, width: 58, align: 'right' as const },
+        { label: 'To prev.', x: 448, width: 53, align: 'right' as const },
+        { label: 'To lead', x: 506, width: 53, align: 'right' as const },
+      ];
   const tableTop = contentTop - 17;
   page.drawRectangle({
     x: 28,
@@ -371,6 +388,7 @@ function drawClassificationPage({
       String(car.laps || 0),
       car.totalTime || '-',
       car.bestLap || '-',
+      ...(showPoints ? [formatPoints(car.points)] : []),
       car.gapToPrevious || '-',
       car.gapToLeader || '-',
     ];
@@ -1357,6 +1375,7 @@ function parseCar(
     totalTime: stringValue(car.totalTime),
     bestLap: stringValue(car.bestLap),
     gap: stringValue(car.gap),
+    points: pointsValue(car.points),
   };
 }
 
@@ -1550,6 +1569,15 @@ function numberValue(value: unknown) {
 }
 function nullableNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+function pointsValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const points = Number(value);
+  return Number.isFinite(points) ? points : null;
+}
+function formatPoints(value: number | null) {
+  return value === null ? '-' : String(value);
 }
 function safeId(value: string) {
   return /^[a-z0-9][a-z0-9-]{0,119}$/i.test(value);

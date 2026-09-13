@@ -233,6 +233,7 @@ function sanitizeCar(value: unknown, racePositions: Record<string, number>) {
     lastLap: stringValue(car.lastLap),
     bestLap: stringValue(car.bestLap),
     gap: stringValue(car.gap),
+    points: nullableNumber(car.points),
   };
 }
 
@@ -241,6 +242,12 @@ function stringValue(value: unknown) {
 }
 function numberValue(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+function nullableNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 function safeId(value: string) {
   return /^[a-z0-9][a-z0-9-]{0,119}$/i.test(value);

@@ -19,6 +19,7 @@ export type TimingCar = {
   lastLap: string;
   bestLap: string;
   gap: string;
+  points?: number | null;
   adjustedBestLap?: string;
   resultAdjustment?: {
     penaltySeconds: number;
