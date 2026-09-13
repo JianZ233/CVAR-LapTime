@@ -73,14 +73,21 @@ export default function Home() {
   const [activeView, setActiveView] = useState<
     'timing' | 'schedule' | 'results'
   >('timing');
+  const canyonClassicComplete = finalCanyonRaceIsFinished(snapshot, sessions);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="site-header">
         <div className="race-ribbon">
-          <span>Official event timing</span>
+          <span>
+            {canyonClassicComplete
+              ? 'Canyon Classic complete'
+              : 'Official event timing'}
+          </span>
           <span className="hidden sm:inline">
-            Canyon Classic · September 11–13, 2026
+            {canyonClassicComplete
+              ? 'Next · Mike Stephens Classic · October 9–11'
+              : 'Canyon Classic · September 11–13, 2026'}
           </span>
         </div>
         <div className="site-header-inner mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -126,6 +133,7 @@ export default function Home() {
       </header>
 
       <main>
+        {canyonClassicComplete && <NextEventBanner />}
         {activeView === 'timing' ? (
           <TimingBoard
             snapshot={snapshot}
@@ -148,6 +156,32 @@ export default function Home() {
         )}
       </main>
     </div>
+  );
+}
+
+function NextEventBanner() {
+  return (
+    <aside className="next-event-banner" aria-label="Next CVAR race">
+      <div className="next-event-banner-inner">
+        <div className="next-event-icon" aria-hidden="true">
+          <CalendarDays />
+        </div>
+        <div className="next-event-copy">
+          <p>Canyon Classic is complete · Next race</p>
+          <h2>Mike Stephens Classic</h2>
+          <span>
+            October 9–11, 2026 · Hallett Motor Racing Circuit · Jennings, OK
+          </span>
+        </div>
+        <a
+          href="https://corinthianvintageautoracing.com/2026-race-calendar/mike-stephens-classic/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Event details <span aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </aside>
   );
 }
 
@@ -1041,6 +1075,19 @@ function flagClassName(value: string) {
 function raceIsFinished(value: string) {
   const flag = value.trim().toLowerCase();
   return flag === 'not active' || /finish|checkered|chequered/.test(flag);
+}
+
+function finalCanyonRaceIsFinished(
+  snapshot: TimingSnapshot,
+  sessions: TimingSessionSummary[],
+) {
+  const isFinalRace = (runName: string, flag: string) =>
+    /^gp4-r4(?:=|$)/i.test(runName.trim()) &&
+    /finish|checkered|chequered/i.test(flag);
+  return (
+    isFinalRace(snapshot.runName, snapshot.flag) ||
+    sessions.some((session) => isFinalRace(session.runName, session.flag))
+  );
 }
 
 function PositionMovement({ change }: { change: number }) {
