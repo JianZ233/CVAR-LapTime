@@ -71,7 +71,7 @@ async function listSessions(eventId: string) {
     missingIds.map((id, index) => [id, fallbackResults[index]?.result]),
   );
 
-  const sessions: SessionSummary[] = ids
+  const parsedSessions: SessionSummary[] = ids
     .flatMap((id, index) => {
       const rawSummary =
         typeof summaryValues[index] === 'string'
@@ -88,15 +88,51 @@ async function listSessions(eventId: string) {
       ];
     })
     .reverse();
+  const liveSessionId =
+    typeof liveSessionValue === 'string' ? liveSessionValue : '';
+  const sessions = deduplicateSessions(parsedSessions, liveSessionId);
 
   return Response.json(
     {
       eventId,
-      liveSessionId:
-        typeof liveSessionValue === 'string' ? liveSessionValue : '',
+      liveSessionId,
       sessions,
     },
     { headers: listHeaders },
+  );
+}
+
+function deduplicateSessions(
+  sessions: SessionSummary[],
+  liveSessionId: string,
+) {
+  const preferredByRace = new Map<string, SessionSummary>();
+
+  for (const session of sessions) {
+    if (session.id === liveSessionId) continue;
+    const key = `${session.runName.trim().toLowerCase()}|${session.groups
+      .map((group) => group.trim().toLowerCase())
+      .sort()
+      .join(',')}`;
+    const preferred = preferredByRace.get(key);
+    if (!preferred || sessionQuality(session) > sessionQuality(preferred))
+      preferredByRace.set(key, session);
+  }
+
+  const visibleIds = new Set(
+    [...preferredByRace.values()].map((session) => session.id),
+  );
+  if (liveSessionId) visibleIds.add(liveSessionId);
+  return sessions.filter((session) => visibleIds.has(session.id));
+}
+
+function sessionQuality(session: SessionSummary) {
+  const finished = session.flag.trim().toUpperCase() === 'FINISH' ? 1 : 0;
+  const updatedAt = Date.parse(session.updatedAt) || 0;
+  return (
+    finished * 1_000_000_000_000_000 +
+    session.carCount * 1_000_000_000 +
+    updatedAt
   );
 }
 
