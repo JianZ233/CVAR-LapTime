@@ -440,6 +440,9 @@ function TimingBoard({
                       <strong>{car.laps}</strong> laps
                     </span>
                     <span>
+                      Total <strong>{car.totalTime || '—'}</strong>
+                    </span>
+                    <span>
                       Last <strong>{car.lastLap || '—'}</strong>
                     </span>
                   </div>

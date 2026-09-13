@@ -5,6 +5,7 @@ import {
   readRacePositions,
   snapshotUsesRacePositions,
 } from './_race_positions.js';
+import { applyManualSessionResult } from './_manual-results.js';
 
 type SessionSummary = {
   id: string;
@@ -113,7 +114,13 @@ async function readSession(eventId: string, sessionId: string) {
   const racePositions = snapshotUsesRacePositions(stored)
     ? await readRacePositions(sessionPrefix)
     : {};
-  const snapshot = sanitizeSnapshot(stored, adjustments, racePositions);
+  const storedSnapshot = sanitizeSnapshot(stored, adjustments, racePositions);
+  const snapshot = storedSnapshot
+    ? applyManualSessionResult(
+        eventId === 'canyon-classic-2026' ? sessionId : '',
+        storedSnapshot,
+      )
+    : null;
   if (!snapshot)
     return Response.json(
       { error: 'Session data is unavailable' },
