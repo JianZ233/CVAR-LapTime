@@ -126,13 +126,14 @@ export default function Home() {
       </header>
 
       <main>
-        <div className="timing-service-alert" role="alert">
+        <div className="timing-service-alert" role="status">
           <div className="timing-service-alert-inner">
             <div className="timing-service-alert-copy">
-              <WifiOff aria-hidden="true" />
+              <Clock3 aria-hidden="true" />
               <p>
-                <strong>Local timing feed temporarily unavailable.</strong>{' '}
-                Follow the race live on Race Monitor.
+                <strong>Live timing is connected.</strong> Group 6 Race 4
+                results are temporarily unavailable here and will be restored
+                after Group 1 Race 4 finishes.
               </p>
             </div>
             <a
@@ -140,7 +141,7 @@ export default function Home() {
               target="_blank"
               rel="noreferrer"
             >
-              View live timing
+              View Group 6 on Race Monitor
               <span aria-hidden="true">↗</span>
             </a>
           </div>
