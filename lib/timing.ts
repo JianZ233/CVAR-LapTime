@@ -57,11 +57,11 @@ export type TimingSnapshot = {
 };
 
 export const demoSnapshot: TimingSnapshot = {
-  eventName: 'Canyon Classic at ECR',
-  trackName: 'Eagles Canyon Raceway',
-  trackLength: '2.7 mi · 15 turns',
+  eventName: '20th Annual Mike Stephens Classic',
+  trackName: 'Hallett Motor Racing Circuit',
+  trackLength: '1.8 mi · 10 turns',
   runId: 'demo',
-  runName: 'Groups 2 & 7 · Test & Tune',
+  runName: 'Pre-race timing check',
   sessionMode: 'practice',
   flag: 'GREEN',
   flagStartedAt: new Date().toISOString(),
@@ -76,7 +76,7 @@ export const demoSnapshot: TimingSnapshot = {
     { id: 3, name: 'FF3' },
   ],
   groups: ['Group 6'],
-  settings: { TRACKNAME: 'Eagles Canyon Raceway', TRACKLENGTH: '2.750' },
+  settings: { TRACKNAME: 'Hallett Motor Racing Circuit', TRACKLENGTH: '1.800' },
   source: {
     protocol: 'RMonitor',
     recordsCaptured: 160,
@@ -420,7 +420,7 @@ function wheelSessionName(value: string) {
 }
 
 export function formatTrackPrimary(value: string) {
-  const distance = value.split('·')[0]?.trim() || '2.7 mi';
+  const distance = value.split('·')[0]?.trim() || '1.8 mi';
   const match = distance.match(/^(\d+(?:\.\d+)?)\s*(?:mi|miles?)?$/i);
   if (!match) return distance;
   return `${Number(match[1]).toLocaleString('en-US', { maximumFractionDigits: 3 })} mi`;
@@ -430,6 +430,7 @@ export function formatTrackDetail(value: string, trackName = '') {
   const detail = value.split('·')[1]?.trim();
   if (detail) return detail;
   if (/eagles canyon/i.test(trackName)) return '15 turns';
+  if (/hallett/i.test(trackName)) return '10 turns';
   return 'Start / finish loop';
 }
 

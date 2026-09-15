@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
 import { redisCommand, redisIsConfigured, redisPipeline } from './_redis.js';
+import { CURRENT_EVENT_ID } from '../lib/events.js';
 
 export async function GET(request: Request) {
   if (!authorized(request))
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
     );
 
   const url = new URL(request.url);
-  const eventId = url.searchParams.get('event') || 'canyon-classic-2026';
+  const eventId = url.searchParams.get('event') || CURRENT_EVENT_ID;
   const sessionId = url.searchParams.get('session');
   if (!safeId(eventId) || (sessionId && !safeId(sessionId)))
     return Response.json(
@@ -49,7 +50,7 @@ export async function DELETE(request: Request) {
     );
 
   const url = new URL(request.url);
-  const eventId = url.searchParams.get('event') || 'canyon-classic-2026';
+  const eventId = url.searchParams.get('event') || CURRENT_EVENT_ID;
   const sessionIds = [...new Set(url.searchParams.getAll('session'))];
   if (
     !safeId(eventId) ||

@@ -8,14 +8,14 @@ const host = process.env.ORBITS_HOST || '127.0.0.1';
 const port = Number(process.env.ORBITS_PORT || 50000);
 const ingestUrl = process.env.CVAR_INGEST_URL;
 const ingestKey = process.env.CVAR_INGEST_KEY;
-const eventId = process.env.CVAR_EVENT_ID || 'canyon-classic-2026';
+const eventId = process.env.CVAR_EVENT_ID || 'mike-stephens-classic-2026';
 const minimumPublishInterval = Math.max(1_000, Number(process.env.CVAR_PUBLISH_INTERVAL_MS || 10_000));
 const rawArchiveDirectory = process.env.CVAR_RAW_ARCHIVE_DIR || 'recordings';
 const rawArchive = process.env.CVAR_RECORD_RAW === '0' ? null : openRawArchive();
 const state = createTimingState({
-  eventName: process.env.CVAR_EVENT_NAME || 'Canyon Classic at ECR',
-  trackName: process.env.CVAR_TRACK_NAME || 'Eagles Canyon Raceway',
-  trackLength: process.env.CVAR_TRACK_LENGTH || '2.7 mi · 15 turns',
+  eventName: process.env.CVAR_EVENT_NAME || '20th Annual Mike Stephens Classic',
+  trackName: process.env.CVAR_TRACK_NAME || 'Hallett Motor Racing Circuit',
+  trackLength: process.env.CVAR_TRACK_LENGTH || '1.8 mi · 10 turns',
   sessionMode: process.env.CVAR_SESSION_MODE || 'auto',
 });
 

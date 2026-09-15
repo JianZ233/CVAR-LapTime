@@ -16,6 +16,7 @@ import {
 } from './_race_positions.js';
 import { applyCvarRacePoints } from '../lib/race-points.js';
 import { deduplicateDriverEntries, raceGapAtLastLap } from '../lib/timing.js';
+import { CURRENT_EVENT_ID } from '../lib/events.js';
 
 type ResultCar = {
   registrationKey: string;
@@ -67,7 +68,7 @@ type ResultSnapshot = {
 type Fonts = { regular: PDFFont; bold: PDFFont; italic: PDFFont };
 type LapBlock = { car: ResultCar; laps: LapPassing[]; continued?: boolean };
 
-const EVENT_ID = 'canyon-classic-2026';
+const EVENT_ID = CURRENT_EVENT_ID;
 const A4: [number, number] = [595.28, 841.89];
 const NAVY = rgb(0.027, 0.086, 0.125);
 const BLUE = rgb(0.075, 0.2, 0.275);
@@ -913,7 +914,7 @@ function drawDocumentHeader({
     height: 76,
     color: YELLOW,
   });
-  page.drawText(safeText(snapshot.eventName || 'Canyon Classic'), {
+  page.drawText(safeText(snapshot.eventName || 'CVAR Race Weekend'), {
     x: 45,
     y: headerY + 52,
     size: 8,

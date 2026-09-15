@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
 import { redisCommand, redisIsConfigured, redisPipeline } from './_redis.js';
+import { CURRENT_EVENT_ID } from '../lib/events.js';
 
 type TimingSnapshotInput = {
   eventName: string;
@@ -132,6 +133,7 @@ async function storeEnvelope(envelope: IngestEnvelope) {
   const commands: Array<Array<string | number>> = [
     ['SET', 'cvar:live', JSON.stringify(storedSnapshot)],
     ['SET', 'cvar:live-session', envelope.sessionId],
+    ['SET', 'cvar:live-event', envelope.eventId],
     ['SET', `${sessionPrefix}:flag-current`, JSON.stringify(flagState)],
   ];
 
@@ -285,7 +287,7 @@ function normalizeEnvelope(value: unknown): IngestEnvelope | null {
   if (isSnapshotShape(value)) {
     const sessionId = `legacy-${slug(value.runName)}`;
     return {
-      eventId: 'canyon-classic-2026',
+      eventId: CURRENT_EVENT_ID,
       sessionId,
       sessionStartedAt: value.updatedAt,
       sessionChanged: true,

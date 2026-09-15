@@ -1,8 +1,8 @@
-# CVAR Live Timing
+# Mike Stephens Classic · CVAR Live Timing
 
-A mobile-friendly live timing board for the Corinthian Vintage Auto Racing **Canyon Classic at ECR, September 11–13, 2026**. It shows session status, overall and class standings, laps, last lap, best lap, gap to the leader, and the full three-day event schedule.
+A mobile-friendly race hub and live timing board for the Corinthian Vintage Auto Racing **20th Annual Mike Stephens Classic at Hallett, October 9–11, 2026**. It includes pre-race information, live session status, overall and class standings, laps, best lap, gap to the leader, and downloadable result sheets.
 
-The site starts in demo mode. Live timing appears automatically when the control-room relay is connected.
+The site starts in pre-race standby. Live timing appears automatically when the control-room relay is connected. Canyon Classic results remain stored under the separate `canyon-classic-2026` event namespace and are available from the public Results archive.
 
 ## How the data gets online
 
@@ -68,9 +68,10 @@ $env:ORBITS_HOST="127.0.0.1"
 $env:ORBITS_PORT="50000"
 $env:CVAR_INGEST_URL="https://YOUR-PROJECT.vercel.app/api/ingest"
 $env:CVAR_INGEST_KEY="THE-SAME-VALUE-AS-CVAR_INGEST_SECRET"
-$env:CVAR_EVENT_ID="canyon-classic-2026"
-$env:CVAR_EVENT_NAME="Canyon Classic at ECR"
-$env:CVAR_TRACK_LENGTH="2.7 mi · 15 turns"
+$env:CVAR_EVENT_ID="mike-stephens-classic-2026"
+$env:CVAR_EVENT_NAME="20th Annual Mike Stephens Classic"
+$env:CVAR_TRACK_NAME="Hallett Motor Racing Circuit"
+$env:CVAR_TRACK_LENGTH="1.8 mi · 10 turns"
 $env:CVAR_SESSION_MODE="auto"
 npm run relay
 ```

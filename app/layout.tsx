@@ -1,20 +1,21 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Karla, Lora } from 'next/font/google';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+const karla = Karla({
+  variable: '--font-karla',
   subsets: ['latin'],
 });
 
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+const lora = Lora({
+  variable: '--font-lora',
   subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: 'CVAR Live Timing',
-  description: 'Live lap timing and classification for Corinthian Vintage Auto Racing.',
+  title: 'Mike Stephens Classic · CVAR Live Timing',
+  description:
+    'Race weekend information, live timing, and downloadable CVAR result archives for the 20th Annual Mike Stephens Classic.',
 };
 
 export default function RootLayout({
@@ -25,7 +26,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${karla.variable} ${lora.variable} antialiased`}
       >
         {children}
       </body>

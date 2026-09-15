@@ -42,8 +42,8 @@ export function createTimingState(options = {}) {
   let rawRecordSequence = 0;
   let runId = '';
   let runName = 'Waiting for session';
-  let trackName = options.trackName || 'Eagles Canyon Raceway';
-  let trackLength = options.trackLength || '2.7 mi · 15 turns';
+  let trackName = options.trackName || 'Hallett Motor Racing Circuit';
+  let trackLength = options.trackLength || '1.8 mi · 10 turns';
   let flag = 'NOT ACTIVE';
   let lapsToGo = null;
   let timeToGo = '';
@@ -354,7 +354,7 @@ export function createTimingState(options = {}) {
     const leader = ordered[0];
 
     return {
-      eventName: options.eventName || 'Canyon Classic at ECR',
+      eventName: options.eventName || '20th Annual Mike Stephens Classic',
       trackName,
       trackLength,
       runId,

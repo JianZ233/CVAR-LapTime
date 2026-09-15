@@ -20,7 +20,7 @@ Orbits may publish the same registration number for more than one named driver. 
 
 When a car number is edited during an active Orbits session, Orbits may retain both the old and new registrations for the same named driver. The public classification keeps only that driver's most complete timing row (highest lap count, then latest completed-lap data) and preserves the full transmitted number, including meaningful suffixes such as `17a`, `64bk`, or `83a`. Different drivers are never combined merely because their car numbers share the same numeric base.
 
-The archive API is intentionally private. Send the same bearer secret used by the relay:
+The raw archive API is intentionally private. Send the same bearer secret used by the relay. The current event uses `mike-stephens-classic-2026`; the completed Canyon Classic remains under `canyon-classic-2026`:
 
 ```text
 GET /api/archive?event=canyon-classic-2026
@@ -28,6 +28,8 @@ GET /api/archive?event=canyon-classic-2026&session=SESSION_ID
 GET /api/archive?event=canyon-classic-2026&session=SESSION_ID&raw=1&offset=0&limit=200
 Authorization: Bearer CVAR_INGEST_SECRET
 ```
+
+Public classification snapshots and printable PDFs are exposed separately through `/api/sessions?event=EVENT_ID` and `/api/result-sheet?event=EVENT_ID&session=SESSION_ID`. Registration, transponder, and raw protocol records are never included in those public responses.
 
 The event response lists sessions and registrations. The session response contains its latest classification, ordered lap passings, and raw-record count. Add `raw=1` to retrieve the private protocol archive in pages of at most 500 records. A future transponder-sheet importer can enrich or correct the same event registration map without changing the live feed.
 

@@ -6,6 +6,7 @@ import {
   snapshotUsesRacePositions,
 } from './_race_positions.js';
 import { applyManualSessionResult } from './_manual-results.js';
+import { ARCHIVE_EVENT_ID, CURRENT_EVENT_ID } from '../lib/events.js';
 
 type SessionSummary = {
   id: string;
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
     );
 
   const url = new URL(request.url);
-  const eventId = url.searchParams.get('event') || 'canyon-classic-2026';
+  const eventId = url.searchParams.get('event') || CURRENT_EVENT_ID;
   const sessionId = url.searchParams.get('session');
   if (!safeId(eventId) || (sessionId && !safeId(sessionId)))
     return Response.json(
@@ -49,8 +50,9 @@ export async function GET(request: Request) {
 
 async function listSessions(eventId: string) {
   const eventPrefix = `cvar:event:${eventId}`;
-  const [liveSessionValue, sessionValues] = await Promise.all([
+  const [liveSessionValue, liveEventValue, sessionValues] = await Promise.all([
     redisCommand(['GET', 'cvar:live-session']),
+    redisCommand(['GET', 'cvar:live-event']),
     redisCommand(['ZRANGE', `${eventPrefix}:sessions`, -100, -1, 'WITHSCORES']),
   ]);
   const pairs = Array.isArray(sessionValues) ? sessionValues.map(String) : [];
@@ -89,7 +91,9 @@ async function listSessions(eventId: string) {
     })
     .reverse();
   const liveSessionId =
-    typeof liveSessionValue === 'string' ? liveSessionValue : '';
+    typeof liveSessionValue === 'string' && liveEventValue === eventId
+      ? liveSessionValue
+      : '';
   const sessions = deduplicateSessions(parsedSessions, liveSessionId);
 
   return Response.json(
@@ -153,7 +157,7 @@ async function readSession(eventId: string, sessionId: string) {
   const storedSnapshot = sanitizeSnapshot(stored, adjustments, racePositions);
   const snapshot = storedSnapshot
     ? applyManualSessionResult(
-        eventId === 'canyon-classic-2026' ? sessionId : '',
+        eventId === ARCHIVE_EVENT_ID ? sessionId : '',
         storedSnapshot,
       )
     : null;

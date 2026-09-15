@@ -1,12 +1,13 @@
 import { adminRequestIsAuthorized } from './_admin-auth.js';
 import { redisCommand, redisIsConfigured } from './_redis.js';
+import { CURRENT_EVENT_ID } from '../lib/events.js';
 
 export async function GET(request: Request) {
   if (!adminRequestIsAuthorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: noStoreHeaders });
   if (!redisIsConfigured()) return Response.json({ error: 'Timing storage is not configured' }, { status: 503, headers: noStoreHeaders });
 
   const url = new URL(request.url);
-  const eventId = url.searchParams.get('event') || 'canyon-classic-2026';
+  const eventId = url.searchParams.get('event') || CURRENT_EVENT_ID;
   const sessionId = url.searchParams.get('session');
   if (!safeId(eventId) || (sessionId && !safeId(sessionId))) return Response.json({ error: 'Invalid event or session identifier' }, { status: 400, headers: noStoreHeaders });
 

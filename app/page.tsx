@@ -3,22 +3,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   CalendarDays,
   Clock3,
   Download,
+  ExternalLink,
   FileText,
   Flag,
+  Gauge,
   ListFilter,
+  MapPin,
   MousePointerClick,
   Radio,
   RotateCcw,
-  TimerReset,
-  Users,
+  Trophy,
   WifiOff,
 } from 'lucide-react';
 
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -34,7 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { eventSchedule, type ScheduleItem } from '@/lib/schedule';
+import { ARCHIVE_EVENT_ID, CURRENT_EVENT_ID } from '@/lib/events';
 import {
   demoSnapshot,
   formatSessionName,
@@ -66,28 +69,22 @@ export default function Home() {
     feedState,
     secondsAgo,
     sessions,
+    archiveSessions,
     liveSessionId,
     selectedSessionId,
     selectSession,
   } = useLiveTiming();
-  const [activeView, setActiveView] = useState<
-    'timing' | 'schedule' | 'results'
-  >('timing');
-  const canyonClassicComplete = finalCanyonRaceIsFinished(snapshot, sessions);
+  const [activeView, setActiveView] = useState<'event' | 'timing' | 'results'>(
+    'event',
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="site-header">
         <div className="race-ribbon">
-          <span>
-            {canyonClassicComplete
-              ? 'Canyon Classic complete'
-              : 'Official event timing'}
-          </span>
+          <span>Up next · 20th annual Mike Stephens Classic</span>
           <span className="hidden sm:inline">
-            {canyonClassicComplete
-              ? 'Next · Mike Stephens Classic · October 9–11'
-              : 'Canyon Classic · September 11–13, 2026'}
+            October 9–11 · Jennings, Oklahoma
           </span>
         </div>
         <div className="site-header-inner mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -98,14 +95,21 @@ export default function Home() {
               className="brand-mark"
             />
             <div className="brand-copy">
-              <p>CVAR live timing</p>
-              <h1>{snapshot.trackName}</h1>
+              <p>Corinthian Vintage Auto Racing</p>
+              <h1>Live timing · Hallett</h1>
             </div>
           </div>
           <nav
             aria-label="Event views"
             className="view-switcher order-3 flex w-full items-center sm:order-none sm:w-auto"
           >
+            <ViewTab
+              active={activeView === 'event'}
+              onClick={() => setActiveView('event')}
+            >
+              <Flag />
+              Race HQ
+            </ViewTab>
             <ViewTab
               active={activeView === 'timing'}
               onClick={() => setActiveView('timing')}
@@ -114,27 +118,27 @@ export default function Home() {
               Live timing
             </ViewTab>
             <ViewTab
-              active={activeView === 'schedule'}
-              onClick={() => setActiveView('schedule')}
-            >
-              <CalendarDays />
-              Schedule
-            </ViewTab>
-            <ViewTab
               active={activeView === 'results'}
               onClick={() => setActiveView('results')}
             >
               <FileText />
-              Results
+              Results archive
             </ViewTab>
           </nav>
-          <FeedBadge state={feedState} />
+          <div className="race-date-badge">
+            <CalendarDays aria-hidden="true" />
+            <span>Oct 9–11</span>
+          </div>
         </div>
       </header>
 
       <main>
-        {canyonClassicComplete && <NextEventBanner />}
-        {activeView === 'timing' ? (
+        {activeView === 'event' ? (
+          <EventHome
+            onViewTiming={() => setActiveView('timing')}
+            onViewResults={() => setActiveView('results')}
+          />
+        ) : activeView === 'timing' ? (
           <TimingBoard
             snapshot={snapshot}
             feedState={feedState}
@@ -144,13 +148,12 @@ export default function Home() {
             selectedSessionId={selectedSessionId}
             onSessionChange={selectSession}
           />
-        ) : activeView === 'schedule' ? (
-          <ScheduleView />
         ) : (
           <ResultsView
             snapshot={snapshot}
             feedState={feedState}
             sessions={sessions}
+            archiveSessions={archiveSessions}
             liveSessionId={liveSessionId}
           />
         )}
@@ -159,29 +162,131 @@ export default function Home() {
   );
 }
 
-function NextEventBanner() {
+function EventHome({
+  onViewTiming,
+  onViewResults,
+}: {
+  onViewTiming: () => void;
+  onViewResults: () => void;
+}) {
   return (
-    <aside className="next-event-banner" aria-label="Next CVAR race">
-      <div className="next-event-banner-inner">
-        <div className="next-event-icon" aria-hidden="true">
-          <CalendarDays />
+    <div className="event-home mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+      <section className="event-hero">
+        <div className="event-hero-copy">
+          <p className="event-edition">20th annual · October 9–11, 2026</p>
+          <div className="event-title-frame">
+            <span>Next:</span>
+            <h2>Mike Stephens Classic</h2>
+          </div>
+          <p className="event-location">
+            <MapPin aria-hidden="true" /> Hallett Motor Racing Circuit ·
+            Jennings, Oklahoma
+          </p>
+          <div className="event-actions">
+            <a
+              href="https://cvar.trackrabbit.com/event/details/10019666-Mike-Stephens-Classic-2026-10-09"
+              target="_blank"
+              rel="noreferrer"
+              className="event-primary-action"
+            >
+              Driver registration <ExternalLink aria-hidden="true" />
+            </a>
+            <button
+              type="button"
+              onClick={onViewTiming}
+              className="event-secondary-action"
+            >
+              Open live timing <ArrowRight aria-hidden="true" />
+            </button>
+          </div>
         </div>
-        <div className="next-event-copy">
-          <p>Canyon Classic is complete · Next race</p>
-          <h2>Mike Stephens Classic</h2>
+        <div className="event-pit-board" aria-label="Race weekend quick facts">
+          <div className="pit-board-number">{daysUntilEvent()}</div>
+          <div className="pit-board-title">Days to green</div>
+          <div className="pit-board-grid">
+            <div>
+              <strong>1.8</strong>
+              <span>Miles</span>
+            </div>
+            <div>
+              <strong>10</strong>
+              <span>Turns</span>
+            </div>
+            <div>
+              <strong>80+</strong>
+              <span>Ft elevation</span>
+            </div>
+            <div>
+              <strong>3</strong>
+              <span>Day weekend</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="event-feature-grid" aria-label="Featured races">
+        <article className="event-feature-card feature-highlight">
+          <Trophy aria-hidden="true" />
+          <p>Feature race</p>
+          <h3>Formula Ford</h3>
+          <span>Podium finishers receive Bulova watches.</span>
+        </article>
+        <article className="event-feature-card">
+          <Gauge aria-hidden="true" />
+          <p>Feature race</p>
+          <h3>Formula Vee</h3>
           <span>
-            October 9–11, 2026 · Hallett Motor Racing Circuit · Jennings, OK
+            A dedicated race for one of vintage racing’s great formulas.
           </span>
+        </article>
+        <article className="event-feature-card feature-archive">
+          <FileText aria-hidden="true" />
+          <p>September archive</p>
+          <h3>Canyon Classic</h3>
+          <span>Every saved result sheet remains available.</span>
+          <button type="button" onClick={onViewResults}>
+            Browse results <ArrowRight aria-hidden="true" />
+          </button>
+        </article>
+      </section>
+
+      <section className="weekend-board">
+        <div className="weekend-heading">
+          <div>
+            <p className="eyebrow">Race weekend</p>
+            <h2>Three days at Hallett</h2>
+          </div>
+          <a
+            href="https://corinthianvintageautoracing.com/2026-race-calendar/mike-stephens-classic/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Official event page <ExternalLink aria-hidden="true" />
+          </a>
         </div>
-        <a
-          href="https://corinthianvintageautoracing.com/2026-race-calendar/mike-stephens-classic/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Event details <span aria-hidden="true">↗</span>
-        </a>
-      </div>
-    </aside>
+        <div className="weekend-days">
+          <article>
+            <time>Fri · Oct 9</time>
+            <strong>Test &amp; Tune</strong>
+            <span>Track time is included with the race entry.</span>
+          </article>
+          <article>
+            <time>Sat · Oct 10</time>
+            <strong>Race day</strong>
+            <span>Vintage grids and feature-race action.</span>
+          </article>
+          <article>
+            <time>Sun · Oct 11</time>
+            <strong>Race day</strong>
+            <span>Final sessions before gates close at 5 PM.</span>
+          </article>
+        </div>
+        <p className="schedule-pending">
+          <Clock3 aria-hidden="true" /> The detailed run schedule has not been
+          posted yet. This page will be updated when CVAR releases it.
+        </p>
+      </section>
+    </div>
   );
 }
 
@@ -204,6 +309,11 @@ function ViewTab({
       {children}
     </button>
   );
+}
+
+function daysUntilEvent() {
+  const start = new Date('2026-10-09T08:00:00-05:00').getTime();
+  return Math.max(0, Math.ceil((start - Date.now()) / 86_400_000));
 }
 
 function TimingBoard({
@@ -254,15 +364,16 @@ function TimingBoard({
     (session) => session.id === selectedSessionId,
   );
 
+  if (feedState === 'demo') return <TimingStandby />;
+
   return (
     <div className="timing-shell mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
       {feedState === 'demo' && (
         <div className="demo-notice">
           <Radio aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
           <p>
-            <strong>Demo feed.</strong> The board is ready for testing; live
-            data appears automatically after the Orbits relay and Vercel Redis
-            are connected.
+            <strong>Pre-race timing check.</strong> Live Mike Stephens Classic
+            data will appear here automatically when the timing feed opens.
           </p>
         </div>
       )}
@@ -272,7 +383,7 @@ function TimingBoard({
           <div className="hero-kicker">
             <span>{snapshot.eventName}</span>
             <span className="hero-kicker-rule" />
-            <span>Sept 11–13</span>
+            <span>Oct 9–11</span>
           </div>
           <div className="hero-title-row">
             <div>
@@ -335,7 +446,7 @@ function TimingBoard({
               </SelectTrigger>
               <SelectContent
                 align="end"
-                className="min-w-72 border-white/10 bg-[#102838] text-white"
+                className="min-w-72 border-white/10 bg-[#1f3038] text-white"
               >
                 <SelectItem value="live">
                   Live ·{' '}
@@ -355,6 +466,7 @@ function TimingBoard({
           <a
             className="current-result-download"
             href={resultSheetHref(
+              CURRENT_EVENT_ID,
               selectedSessionId === 'live' ? '' : selectedSessionId,
             )}
             download
@@ -644,59 +756,44 @@ function TimingBoard({
   );
 }
 
-function ScheduleView() {
+function TimingStandby() {
   return (
-    <div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <div className="schedule-intro">
-        <div>
-          <p className="eyebrow">September 11–13, 2026</p>
-          <h2>Canyon Classic at ECR</h2>
-        </div>
-        <div className="flex max-w-md flex-col items-start gap-3 lg:items-end">
-          <p className="text-sm text-muted-foreground lg:text-right">
-            Start times, durations, and run order are from the official event
-            schedule and may change at the track.
+    <div className="timing-standby mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <section className="standby-board">
+        <div className="standby-copy">
+          <p className="eyebrow">Live timing · October 9–11</p>
+          <h2>
+            The board is ready.
+            <br />
+            The track is quiet.
+          </h2>
+          <p>
+            Timing will switch on automatically when the Mike Stephens Classic
+            begins at Hallett.
           </p>
-          <a
-            href="/ECR-Fall-2026-Schedule.pdf"
-            download
-            className={buttonVariants({
-              size: 'lg',
-              className:
-                'bg-primary px-4 font-bold text-primary-foreground shadow-[0_8px_24px_rgba(244,201,68,0.2)] hover:bg-[#ffda5e] hover:text-primary-foreground focus-visible:ring-primary/60',
-            })}
-          >
-            <Download aria-hidden="true" className="size-4" />
-            Download official schedule
-          </a>
         </div>
-      </div>
-
-      <div className="grid items-start gap-4 lg:grid-cols-3">
-        {eventSchedule.map((day) => (
-          <section key={day.day} className="schedule-day">
-            <header>
-              <div>
-                <span>Race day</span>
-                <h3>{day.day}</h3>
-              </div>
-              <time>{day.date}</time>
-            </header>
-            <div className="schedule-list">
-              {day.items.map((item, index) => (
-                <ScheduleRow
-                  key={`${day.day}-${item.title}-${index}`}
-                  item={item}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-
-      <div className="schedule-note">
-        <strong>Screaming Eagles:</strong> Spec Boxster, Spec Miata, and Toyota
-        GR86.
+        <div className="standby-status">
+          <span className="standby-light" aria-hidden="true" />
+          <p>System status</p>
+          <strong>Waiting for Orbits</strong>
+          <span>No refresh needed</span>
+        </div>
+      </section>
+      <div className="standby-details">
+        <div>
+          <strong>Automatic</strong>
+          <span>
+            Live standings appear when the first session is published.
+          </span>
+        </div>
+        <div>
+          <strong>Every session</strong>
+          <span>Completed classifications are saved as downloadable PDFs.</span>
+        </div>
+        <div>
+          <strong>Mobile ready</strong>
+          <span>Follow position, laps, best time, and gap from trackside.</span>
+        </div>
       </div>
     </div>
   );
@@ -706,26 +803,29 @@ function ResultsView({
   snapshot,
   feedState,
   sessions,
+  archiveSessions,
   liveSessionId,
 }: {
   snapshot: TimingSnapshot;
   feedState: FeedState;
   sessions: TimingSessionSummary[];
+  archiveSessions: TimingSessionSummary[];
   liveSessionId: string;
 }) {
-  const archivedSessions = sessions.filter(
+  const currentSessions = sessions.filter(
     (session) => session.id !== liveSessionId,
   );
 
   return (
     <div className="results-shell mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <section className="results-intro">
+      <section className="results-intro results-intro-archive">
         <div>
-          <p className="eyebrow">Driver downloads</p>
-          <h2>Session result sheets</h2>
+          <p className="eyebrow">Permanent driver archive</p>
+          <h2>Race results, ready to download</h2>
           <p>
-            Download a printable PDF classification for any recorded session.
-            Each sheet is generated from the latest saved timing data.
+            The Canyon Classic is finished, but every saved classification
+            remains available as a printable PDF. October result sheets will
+            appear here as the Mike Stephens Classic gets underway.
           </p>
         </div>
         <div className="results-paper-preview" aria-hidden="true">
@@ -741,46 +841,48 @@ function ResultsView({
         </div>
       </section>
 
-      <section className="featured-result">
-        <div className="result-file-icon">
-          <FileText aria-hidden="true" />
-        </div>
-        <div className="result-copy">
-          <div className="result-status">
-            <span
-              className={feedState === 'live' ? 'result-status-live' : ''}
-            />
-            Current timing
+      {feedState !== 'demo' && (
+        <section className="featured-result">
+          <div className="result-file-icon">
+            <FileText aria-hidden="true" />
           </div>
-          <h3>{formatSessionName(snapshot.runName)}</h3>
-          <p>
-            {snapshot.trackName} · {snapshot.cars.length} cars ·{' '}
-            {snapshot.flag || 'Timing recorded'}
-          </p>
-        </div>
-        <a
-          className="result-download result-download-primary"
-          href="/api/result-sheet"
-          download
-        >
-          <Download aria-hidden="true" /> Download PDF
-        </a>
-      </section>
+          <div className="result-copy">
+            <div className="result-status">
+              <span
+                className={feedState === 'live' ? 'result-status-live' : ''}
+              />
+              Current timing
+            </div>
+            <h3>{formatSessionName(snapshot.runName)}</h3>
+            <p>
+              {snapshot.trackName} · {snapshot.cars.length} cars ·{' '}
+              {snapshot.flag || 'Timing recorded'}
+            </p>
+          </div>
+          <a
+            className="result-download result-download-primary"
+            href={resultSheetHref(CURRENT_EVENT_ID, '')}
+            download
+          >
+            <Download aria-hidden="true" /> Download PDF
+          </a>
+        </section>
+      )}
 
       <div className="results-section-heading">
         <div>
-          <p className="eyebrow">Saved timing</p>
-          <h3>Previous sessions</h3>
+          <p className="eyebrow">October 9–11 · Hallett</p>
+          <h3>Mike Stephens Classic</h3>
         </div>
         <span>
-          {archivedSessions.length}{' '}
-          {archivedSessions.length === 1 ? 'sheet' : 'sheets'} available
+          {currentSessions.length}{' '}
+          {currentSessions.length === 1 ? 'sheet' : 'sheets'} available
         </span>
       </div>
 
-      {archivedSessions.length ? (
+      {currentSessions.length ? (
         <div className="result-grid">
-          {archivedSessions.map((session) => (
+          {currentSessions.map((session) => (
             <article key={session.id} className="result-card">
               <div className="result-card-top">
                 <div className="result-file-icon result-file-icon-small">
@@ -794,7 +896,7 @@ function ResultsView({
               </p>
               <a
                 className="result-download"
-                href={resultSheetHref(session.id)}
+                href={resultSheetHref(CURRENT_EVENT_ID, session.id)}
                 download
               >
                 <Download aria-hidden="true" /> Download PDF
@@ -805,11 +907,62 @@ function ResultsView({
       ) : (
         <div className="results-empty">
           <FileText aria-hidden="true" />
-          <h3>Previous sessions will appear here</h3>
+          <h3>October result sheets will appear here</h3>
           <p>
-            A result sheet becomes available as soon as the timing system saves
-            a session.
+            Timing is ready. The first downloadable sheet is created as soon as
+            a session records cars on track.
           </p>
+        </div>
+      )}
+
+      <div className="results-section-heading results-archive-heading">
+        <div>
+          <p className="eyebrow">September 11–13 · Eagles Canyon</p>
+          <h3>Canyon Classic archive</h3>
+        </div>
+        <div className="archive-heading-actions">
+          <a href="/ECR-Fall-2026-Schedule.pdf" download>
+            Official schedule <Download aria-hidden="true" />
+          </a>
+          <span>
+            {archiveSessions.length}{' '}
+            {archiveSessions.length === 1 ? 'sheet' : 'sheets'} available
+          </span>
+        </div>
+      </div>
+
+      {archiveSessions.length ? (
+        <div className="result-grid result-grid-archive">
+          {archiveSessions.map((session) => (
+            <article
+              key={session.id}
+              className="result-card result-card-archive"
+            >
+              <div className="result-card-top">
+                <div className="result-file-icon result-file-icon-small">
+                  <FileText aria-hidden="true" />
+                </div>
+                <span>{session.flag || 'Recorded'}</span>
+              </div>
+              <h4>{formatSessionName(session.runName)}</h4>
+              <p>
+                {formatSessionDate(session.startedAt)} · {session.carCount} cars
+              </p>
+              <a
+                className="result-download"
+                href={resultSheetHref(ARCHIVE_EVENT_ID, session.id)}
+                download
+              >
+                <Download aria-hidden="true" /> Download PDF
+              </a>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="results-empty">
+          <FileText aria-hidden="true" />
+          <h3>Connecting to the Canyon Classic archive</h3>
+          <p>Saved sheets will appear when timing storage is available.</p>
         </div>
       )}
 
@@ -820,53 +973,14 @@ function ResultsView({
   );
 }
 
-function ScheduleRow({ item }: { item: ScheduleItem }) {
-  const Icon =
-    item.kind === 'meeting'
-      ? Users
-      : item.kind === 'break'
-        ? Clock3
-        : TimerReset;
-  return (
-    <div className={`schedule-row schedule-row-${item.kind || 'track'}`}>
-      <Icon aria-hidden="true" className="mt-0.5 size-4" />
-      <div>
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <p className="font-semibold text-white">{item.title}</p>
-          {item.time && (
-            <time className="font-mono text-sm text-slate-300">
-              {item.time}
-            </time>
-          )}
-        </div>
-        {item.duration && <p className="schedule-duration">{item.duration}</p>}
-        {item.groups && (
-          <ol className="mt-3 grid gap-1 text-sm text-muted-foreground">
-            {item.groups.map((group, index) => (
-              <li key={`${group}-${index}`} className="flex items-center gap-2">
-                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-400/25 font-mono text-[0.7rem] text-sky-300">
-                  {index + 1}
-                </span>
-                <span>{group}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-        {item.note && (
-          <p className="mt-2 text-sm leading-5 text-muted-foreground">
-            {item.note}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function useLiveTiming() {
   const [snapshot, setSnapshot] = useState<TimingSnapshot>(demoSnapshot);
   const [feedState, setFeedState] = useState<FeedState>('demo');
   const [clock, setClock] = useState(0);
   const [sessions, setSessions] = useState<TimingSessionSummary[]>([]);
+  const [archiveSessions, setArchiveSessions] = useState<
+    TimingSessionSummary[]
+  >([]);
   const [liveSessionId, setLiveSessionId] = useState('');
   const [selectedSessionId, setSelectedSessionId] = useState('live');
   const hasReceivedData = useRef(false);
@@ -875,7 +989,7 @@ function useLiveTiming() {
     let cancelled = false;
     async function refreshSessions() {
       try {
-        const response = await fetch('/api/sessions');
+        const response = await fetch(`/api/sessions?event=${CURRENT_EVENT_ID}`);
         if (!response.ok) return;
         const body = (await response.json()) as {
           liveSessionId?: unknown;
@@ -903,12 +1017,35 @@ function useLiveTiming() {
 
   useEffect(() => {
     let cancelled = false;
+    async function refreshArchive() {
+      try {
+        const response = await fetch(`/api/sessions?event=${ARCHIVE_EVENT_ID}`);
+        if (!response.ok) return;
+        const body = (await response.json()) as { sessions?: unknown };
+        if (cancelled || !Array.isArray(body.sessions)) return;
+        setArchiveSessions(
+          (body.sessions as TimingSessionSummary[]).filter(
+            (session) => session.carCount > 0,
+          ),
+        );
+      } catch {
+        // The event page remains usable if archive storage is temporarily offline.
+      }
+    }
+    void refreshArchive();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     async function refresh() {
       try {
         const endpoint =
           selectedSessionId === 'live'
-            ? '/api/live'
-            : `/api/sessions?session=${encodeURIComponent(selectedSessionId)}`;
+            ? `/api/live?event=${CURRENT_EVENT_ID}`
+            : `/api/sessions?event=${CURRENT_EVENT_ID}&session=${encodeURIComponent(selectedSessionId)}`;
         const response = await fetch(endpoint);
         if (!response.ok)
           throw new Error(`Timing endpoint returned ${response.status}`);
@@ -952,6 +1089,7 @@ function useLiveTiming() {
       feedState === 'live' && secondsAgo > 15 ? ('stale' as const) : feedState,
     secondsAgo,
     sessions,
+    archiveSessions,
     liveSessionId,
     selectedSessionId,
     selectSession: setSelectedSessionId,
@@ -1077,19 +1215,6 @@ function raceIsFinished(value: string) {
   return flag === 'not active' || /finish|checkered|chequered/.test(flag);
 }
 
-function finalCanyonRaceIsFinished(
-  snapshot: TimingSnapshot,
-  sessions: TimingSessionSummary[],
-) {
-  const isFinalRace = (runName: string, flag: string) =>
-    /^gp4-r4(?:=|$)/i.test(runName.trim()) &&
-    /finish|checkered|chequered/i.test(flag);
-  return (
-    isFinalRace(snapshot.runName, snapshot.flag) ||
-    sessions.some((session) => isFinalRace(session.runName, session.flag))
-  );
-}
-
 function PositionMovement({ change }: { change: number }) {
   if (!change) return null;
   const gained = change > 0;
@@ -1175,10 +1300,10 @@ function formatSessionDate(value: string) {
     : 'Saved session';
 }
 
-function resultSheetHref(sessionId: string) {
-  return sessionId
-    ? `/api/result-sheet?session=${encodeURIComponent(sessionId)}`
-    : '/api/result-sheet';
+function resultSheetHref(eventId: string, sessionId: string) {
+  const params = new URLSearchParams({ event: eventId });
+  if (sessionId) params.set('session', sessionId);
+  return `/api/result-sheet?${params.toString()}`;
 }
 
 function formatResultAdjustment(

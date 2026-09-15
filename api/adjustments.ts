@@ -6,8 +6,9 @@ import {
   type ResultStatus,
 } from './_adjustments.js';
 import { redisCommand, redisIsConfigured, redisPipeline } from './_redis.js';
+import { CURRENT_EVENT_ID } from '../lib/events.js';
 
-const defaultEventId = 'canyon-classic-2026';
+const defaultEventId = CURRENT_EVENT_ID;
 
 export async function GET(request: Request) {
   if (!adminRequestIsAuthorized(request))

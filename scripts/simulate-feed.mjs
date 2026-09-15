@@ -12,8 +12,8 @@ const server = net.createServer((socket) => {
   socket.write('$I,"09:00:00.000","05 sep 26"\r\n');
   socket.write('$B,1,"Groups 2 & 7 Test & Tune"\r\n');
   socket.write('$C,1,"FF2"\r\n$C,2,"FF1"\r\n$C,3,"FF3"\r\n');
-  socket.write('$E,"TRACKNAME","Eagles Canyon Raceway"\r\n');
-  socket.write('$E,"TRACKLENGTH","2.7 mi · 15 turns"\r\n');
+  socket.write('$E,"TRACKNAME","Hallett Motor Racing Circuit"\r\n');
+  socket.write('$E,"TRACKLENGTH","1.8 mi · 10 turns"\r\n');
   cars.forEach((car) => {
     socket.write(`$A,"${car.reg}","${car.number}",${10000 + Number(car.number)},"${car.first}","${car.last}","${car.group}",${car.classNumber}\r\n`);
     socket.write(`$COMP,"${car.reg}","${car.number}",${car.classNumber},"${car.first}","${car.last}","${car.group}","${car.model}"\r\n`);
