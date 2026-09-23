@@ -820,6 +820,27 @@
     color: var(--cvar-gold);
   }
 
+  .schedule-ready {
+    width: fit-content;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .schedule-ready strong {
+    color: var(--race-red-bright);
+  }
+
+  .schedule-ready svg:last-child {
+    color: var(--race-red-bright);
+    transition: transform 160ms ease;
+  }
+
+  .schedule-ready:hover svg:last-child {
+    transform: translateX(0.2rem);
+  }
+
   @media (max-width: 950px) {
     .event-hero {
       grid-template-columns: 1fr;
@@ -1680,6 +1701,34 @@
     line-height: 1;
   }
 
+  .schedule-download {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.6rem;
+    background: var(--primary);
+    padding: 0.65rem 1rem;
+    color: var(--primary-foreground);
+    font-size: 0.875rem;
+    font-weight: 800;
+    box-shadow: 0 8px 24px rgb(244 201 68 / 0.2);
+    transition:
+      background-color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .schedule-download:hover {
+    background: #ffda5e;
+    transform: translateY(-1px);
+  }
+
+  .schedule-download svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
   .schedule-day {
     overflow: hidden;
     border: 1px solid rgb(143 202 236 / 0.16);
@@ -2164,8 +2213,11 @@
     }
     .view-tab {
       min-height: 2.75rem;
-      padding-inline: 0.45rem;
-      font-size: 0.8rem;
+      padding-inline: 0.3rem;
+      font-size: 0.72rem;
+    }
+    .view-tab svg {
+      display: none;
     }
     .timing-shell {
       padding: 0.7rem 0.65rem 1.5rem;

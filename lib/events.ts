@@ -8,6 +8,7 @@ export const currentEvent = {
   dates: 'October 9–11, 2026',
   trackName: 'Hallett Motor Racing Circuit',
   trackLength: '1.8 mi · 10 turns',
+  scheduleHref: '/Hallett-Fall-2026-Schedule.pdf',
 } as const;
 
 export const archivedEvent = {

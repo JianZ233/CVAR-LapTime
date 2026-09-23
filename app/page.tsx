@@ -17,7 +17,9 @@ import {
   MousePointerClick,
   Radio,
   RotateCcw,
+  TimerReset,
   Trophy,
+  Users,
   WifiOff,
 } from 'lucide-react';
 
@@ -37,7 +39,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ARCHIVE_EVENT_ID, CURRENT_EVENT_ID } from '@/lib/events';
+import { ARCHIVE_EVENT_ID, CURRENT_EVENT_ID, currentEvent } from '@/lib/events';
+import { eventSchedule, type ScheduleItem } from '@/lib/schedule';
 import {
   demoSnapshot,
   formatSessionName,
@@ -74,9 +77,9 @@ export default function Home() {
     selectedSessionId,
     selectSession,
   } = useLiveTiming();
-  const [activeView, setActiveView] = useState<'event' | 'timing' | 'results'>(
-    'event',
-  );
+  const [activeView, setActiveView] = useState<
+    'event' | 'schedule' | 'timing' | 'results'
+  >('event');
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -118,6 +121,13 @@ export default function Home() {
               Live timing
             </ViewTab>
             <ViewTab
+              active={activeView === 'schedule'}
+              onClick={() => setActiveView('schedule')}
+            >
+              <CalendarDays />
+              Schedule
+            </ViewTab>
+            <ViewTab
               active={activeView === 'results'}
               onClick={() => setActiveView('results')}
             >
@@ -135,9 +145,12 @@ export default function Home() {
       <main>
         {activeView === 'event' ? (
           <EventHome
+            onViewSchedule={() => setActiveView('schedule')}
             onViewTiming={() => setActiveView('timing')}
             onViewResults={() => setActiveView('results')}
           />
+        ) : activeView === 'schedule' ? (
+          <ScheduleView />
         ) : activeView === 'timing' ? (
           <TimingBoard
             snapshot={snapshot}
@@ -163,9 +176,11 @@ export default function Home() {
 }
 
 function EventHome({
+  onViewSchedule,
   onViewTiming,
   onViewResults,
 }: {
+  onViewSchedule: () => void;
   onViewTiming: () => void;
   onViewResults: () => void;
 }) {
@@ -268,23 +283,32 @@ function EventHome({
           <article>
             <time>Fri · Oct 9</time>
             <strong>Test &amp; Tune</strong>
-            <span>Track time is included with the race entry.</span>
+            <span>
+              Four rounds, lead-follow sessions, and the Formula Vee feature.
+            </span>
           </article>
           <article>
             <time>Sat · Oct 10</time>
-            <strong>Race day</strong>
-            <span>Vintage grids and feature-race action.</span>
+            <strong>Qualifying &amp; races</strong>
+            <span>
+              Practice and qualifying, Races 1–2, and the Formula Ford feature.
+            </span>
           </article>
           <article>
             <time>Sun · Oct 11</time>
-            <strong>Race day</strong>
-            <span>Final sessions before gates close at 5 PM.</span>
+            <strong>Points races</strong>
+            <span>Race 3 points sessions, lunch, and the final Race 4.</span>
           </article>
         </div>
-        <p className="schedule-pending">
-          <Clock3 aria-hidden="true" /> The detailed run schedule has not been
-          posted yet. This page will be updated when CVAR releases it.
-        </p>
+        <button
+          type="button"
+          className="schedule-pending schedule-ready"
+          onClick={onViewSchedule}
+        >
+          <CalendarDays aria-hidden="true" /> The official detailed schedule is
+          now available. <strong>View run order</strong>
+          <ArrowRight aria-hidden="true" />
+        </button>
       </section>
     </div>
   );
@@ -314,6 +338,101 @@ function ViewTab({
 function daysUntilEvent() {
   const start = new Date('2026-10-09T08:00:00-05:00').getTime();
   return Math.max(0, Math.ceil((start - Date.now()) / 86_400_000));
+}
+
+function ScheduleView() {
+  return (
+    <div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div className="schedule-intro">
+        <div>
+          <p className="eyebrow">October 9–11, 2026</p>
+          <h2>20th Mike Stephens Classic</h2>
+        </div>
+        <div className="flex max-w-md flex-col items-start gap-3 lg:items-end">
+          <p className="text-sm text-muted-foreground lg:text-right">
+            Times, durations, and run order are from the official CVAR schedule
+            and may change at the track.
+          </p>
+          <a
+            href={currentEvent.scheduleHref}
+            download
+            className="schedule-download"
+          >
+            <Download aria-hidden="true" /> Download official schedule
+          </a>
+        </div>
+      </div>
+
+      <div className="grid items-start gap-4 lg:grid-cols-3">
+        {eventSchedule.map((day) => (
+          <section key={day.day} className="schedule-day">
+            <header>
+              <div>
+                <span>Race day</span>
+                <h3>{day.day}</h3>
+              </div>
+              <time>{day.date}</time>
+            </header>
+            <div className="schedule-list">
+              {day.items.map((item, index) => (
+                <ScheduleRow
+                  key={`${day.day}-${item.title}-${index}`}
+                  item={item}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <div className="schedule-note">
+        <strong>Trackside note:</strong> Only clock times published on the
+        official schedule are shown. Later sessions follow the listed run order.
+      </div>
+    </div>
+  );
+}
+
+function ScheduleRow({ item }: { item: ScheduleItem }) {
+  const Icon =
+    item.kind === 'meeting'
+      ? Users
+      : item.kind === 'break'
+        ? Clock3
+        : TimerReset;
+  return (
+    <div className={`schedule-row schedule-row-${item.kind || 'track'}`}>
+      <Icon aria-hidden="true" className="mt-0.5 size-4" />
+      <div>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <p className="font-semibold text-white">{item.title}</p>
+          {item.time && (
+            <time className="font-mono text-sm text-slate-300">
+              {item.time}
+            </time>
+          )}
+        </div>
+        {item.duration && <p className="schedule-duration">{item.duration}</p>}
+        {item.groups && (
+          <ol className="mt-3 grid gap-1 text-sm text-muted-foreground">
+            {item.groups.map((group, index) => (
+              <li key={`${group}-${index}`} className="flex items-center gap-2">
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-400/25 font-mono text-[0.7rem] text-sky-300">
+                  {index + 1}
+                </span>
+                <span>{group}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+        {item.note && (
+          <p className="mt-2 text-sm leading-5 text-muted-foreground">
+            {item.note}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function TimingBoard({
