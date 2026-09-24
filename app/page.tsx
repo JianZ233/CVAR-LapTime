@@ -1,1444 +1,317 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  ArrowDown,
-  ArrowRight,
-  ArrowUp,
   CalendarDays,
-  Clock3,
-  Download,
   ExternalLink,
   FileText,
   Flag,
-  Gauge,
-  ListFilter,
-  MapPin,
-  MousePointerClick,
+  History as HistoryIcon,
   Radio,
-  RotateCcw,
-  TimerReset,
-  Trophy,
-  Users,
-  WifiOff,
+  type LucideIcon,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  LiveDot,
+  type HubNavigate,
+  type HubView,
+} from '@/components/hub/common';
+import { RaceHQ } from '@/components/hub/race-hq';
+import { ResultsView } from '@/components/hub/results-view';
+import { ScheduleView } from '@/components/hub/schedule-view';
+import { TimingBoard } from '@/components/hub/timing-board';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { ARCHIVE_EVENT_ID, CURRENT_EVENT_ID, currentEvent } from '@/lib/events';
-import { eventSchedule, type ScheduleItem } from '@/lib/schedule';
-import {
-  demoSnapshot,
-  formatSessionName,
-  formatTrackDetail,
-  formatTrackPrimary,
-  formatTrackSummary,
-  isTimingSnapshot,
-  rankSnapshotForSession,
-  resultOrderForSession,
-  type TimingSnapshot,
-} from '@/lib/timing';
+  useLiveTiming,
+  useNow,
+  type LiveTiming,
+} from '@/hooks/use-live-timing';
+import { currentEvent } from '@/lib/events';
+import { formatSessionName } from '@/lib/timing';
+import { daysUntilEvent, eventPhase } from '@/lib/timing-display';
 
-type FeedState = 'demo' | 'live' | 'stale' | 'history';
+const NAV_ITEMS: Array<{
+  view: HubView;
+  label: string;
+  short: string;
+  icon: LucideIcon;
+}> = [
+  { view: 'event', label: 'Race HQ', short: 'Race HQ', icon: Flag },
+  { view: 'timing', label: 'Live timing', short: 'Timing', icon: Radio },
+  {
+    view: 'schedule',
+    label: 'Schedule',
+    short: 'Schedule',
+    icon: CalendarDays,
+  },
+  { view: 'results', label: 'Results', short: 'Results', icon: FileText },
+];
 
-type TimingSessionSummary = {
-  id: string;
-  startedAt: string;
-  runId: string;
-  runName: string;
-  flag: string;
-  groups: string[];
-  carCount: number;
-  updatedAt: string;
+const VIEW_HASH: Record<HubView, string> = {
+  event: '',
+  timing: '#timing',
+  schedule: '#schedule',
+  results: '#results',
 };
 
+function viewFromHash(hash: string): HubView {
+  const view = hash.replace(/^#/, '');
+  return view === 'timing' || view === 'schedule' || view === 'results'
+    ? view
+    : 'event';
+}
+
 export default function Home() {
-  const {
-    snapshot,
-    feedState,
-    secondsAgo,
-    sessions,
-    archiveSessions,
-    liveSessionId,
-    selectedSessionId,
-    selectSession,
-  } = useLiveTiming();
-  const [activeView, setActiveView] = useState<
-    'event' | 'schedule' | 'timing' | 'results'
-  >('event');
+  const timing = useLiveTiming();
+  const now = useNow(30_000);
+  const [view, setView] = useState<HubView>('event');
+  const [scheduleDay, setScheduleDay] = useState<number | undefined>();
+
+  // Keep the active view in the URL hash so links, refreshes, and the back
+  // button all land on the same view.
+  useEffect(() => {
+    const sync = () => setView(viewFromHash(window.location.hash));
+    sync();
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
+  }, []);
+
+  const navigate = useCallback<HubNavigate>((next, options) => {
+    setScheduleDay(options?.day);
+    setView(next);
+    const hash = VIEW_HASH[next];
+    if (window.location.hash !== hash)
+      window.history.pushState(
+        null,
+        '',
+        hash || `${window.location.pathname}${window.location.search}`,
+      );
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  const onTrack = timing.feedState === 'live' || timing.feedState === 'stale';
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="hub">
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
       <header className="site-header">
-        <div className="race-ribbon">
-          <span>Up next · 20th annual Mike Stephens Classic</span>
-          <span className="hidden sm:inline">
-            October 9–11 · Jennings, Oklahoma
-          </span>
-        </div>
-        <div className="site-header-inner mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="brand-lockup">
+        <div className="wrap site-header-inner">
+          <ViewLink view="event" navigate={navigate} className="brand">
             <img
               src="/cvar-logo.png"
               alt="Corinthian Vintage Auto Racing"
-              className="brand-mark"
+              className="brand-logo"
+              width={350}
+              height={156}
             />
-            <div className="brand-copy">
-              <p>Corinthian Vintage Auto Racing</p>
-              <h1>Live timing · Hallett</h1>
-            </div>
-          </div>
-          <nav
-            aria-label="Event views"
-            className="view-switcher order-3 flex w-full items-center sm:order-none sm:w-auto"
-          >
-            <ViewTab
-              active={activeView === 'event'}
-              onClick={() => setActiveView('event')}
-            >
-              <Flag />
-              Race HQ
-            </ViewTab>
-            <ViewTab
-              active={activeView === 'timing'}
-              onClick={() => setActiveView('timing')}
-            >
-              <Radio />
-              Live timing
-            </ViewTab>
-            <ViewTab
-              active={activeView === 'schedule'}
-              onClick={() => setActiveView('schedule')}
-            >
-              <CalendarDays />
-              Schedule
-            </ViewTab>
-            <ViewTab
-              active={activeView === 'results'}
-              onClick={() => setActiveView('results')}
-            >
-              <FileText />
-              Results archive
-            </ViewTab>
+            <span className="brand-text">
+              <span className="brand-title">Live timing</span>
+              <span className="brand-event">
+                {currentEvent.shortName} · Hallett
+              </span>
+            </span>
+          </ViewLink>
+          <nav className="site-nav" aria-label="Sections">
+            {NAV_ITEMS.map((item) => (
+              <ViewLink
+                key={item.view}
+                view={item.view}
+                navigate={navigate}
+                className="site-nav-link"
+                current={view === item.view}
+              >
+                {item.label}
+                {item.view === 'timing' && onTrack && (
+                  <LiveDot
+                    tone={timing.feedState === 'live' ? 'live' : 'stale'}
+                  />
+                )}
+              </ViewLink>
+            ))}
           </nav>
-          <div className="race-date-badge">
-            <CalendarDays aria-hidden="true" />
-            <span>Oct 9–11</span>
-          </div>
+          <StatusPill timing={timing} now={now} onNavigate={navigate} />
         </div>
       </header>
 
-      <main>
-        {activeView === 'event' ? (
-          <EventHome
-            onViewSchedule={() => setActiveView('schedule')}
-            onViewTiming={() => setActiveView('timing')}
-            onViewResults={() => setActiveView('results')}
-          />
-        ) : activeView === 'schedule' ? (
-          <ScheduleView />
-        ) : activeView === 'timing' ? (
-          <TimingBoard
-            snapshot={snapshot}
-            feedState={feedState}
-            secondsAgo={secondsAgo}
-            sessions={sessions}
-            liveSessionId={liveSessionId}
-            selectedSessionId={selectedSessionId}
-            onSessionChange={selectSession}
+      <main id="main" className="hub-main">
+        {view === 'event' ? (
+          <RaceHQ timing={timing} now={now} onNavigate={navigate} />
+        ) : view === 'timing' ? (
+          <TimingBoard timing={timing} now={now} onNavigate={navigate} />
+        ) : view === 'schedule' ? (
+          <ScheduleView
+            key={scheduleDay ?? 'auto'}
+            now={now}
+            initialDay={scheduleDay}
           />
         ) : (
-          <ResultsView
-            snapshot={snapshot}
-            feedState={feedState}
-            sessions={sessions}
-            archiveSessions={archiveSessions}
-            liveSessionId={liveSessionId}
-          />
+          <ResultsView timing={timing} />
         )}
       </main>
-    </div>
-  );
-}
 
-function EventHome({
-  onViewSchedule,
-  onViewTiming,
-  onViewResults,
-}: {
-  onViewSchedule: () => void;
-  onViewTiming: () => void;
-  onViewResults: () => void;
-}) {
-  return (
-    <div className="event-home mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-      <section className="event-hero">
-        <div className="event-hero-copy">
-          <p className="event-edition">20th annual · October 9–11, 2026</p>
-          <div className="event-title-frame">
-            <span>Next:</span>
-            <h2>Mike Stephens Classic</h2>
+      <footer className="site-footer">
+        <div className="wrap site-footer-inner">
+          <div className="footer-brand">
+            <img src="/cvar-logo.png" alt="" width={350} height={156} />
+            <p>
+              <strong>Corinthian Vintage Auto Racing</strong>
+              <span>
+                Unofficial live timing · Results are final only after steward
+                review
+              </span>
+            </p>
           </div>
-          <p className="event-location">
-            <MapPin aria-hidden="true" /> Hallett Motor Racing Circuit ·
-            Jennings, Oklahoma
-          </p>
-          <div className="event-actions">
+          <nav className="footer-links" aria-label="CVAR links">
             <a
-              href="https://cvar.trackrabbit.com/event/details/10019666-Mike-Stephens-Classic-2026-10-09"
+              href="https://corinthianvintageautoracing.com"
               target="_blank"
               rel="noreferrer"
-              className="event-primary-action"
             >
-              Driver registration <ExternalLink aria-hidden="true" />
+              CVAR website <ExternalLink aria-hidden="true" />
             </a>
-            <button
-              type="button"
-              onClick={onViewTiming}
-              className="event-secondary-action"
+            <a
+              href={currentEvent.eventPageHref}
+              target="_blank"
+              rel="noreferrer"
             >
-              Open live timing <ArrowRight aria-hidden="true" />
-            </button>
-          </div>
+              Event page <ExternalLink aria-hidden="true" />
+            </a>
+          </nav>
         </div>
-        <div className="event-pit-board" aria-label="Race weekend quick facts">
-          <div className="pit-board-number">{daysUntilEvent()}</div>
-          <div className="pit-board-title">Days to green</div>
-          <div className="pit-board-grid">
-            <div>
-              <strong>1.8</strong>
-              <span>Miles</span>
-            </div>
-            <div>
-              <strong>10</strong>
-              <span>Turns</span>
-            </div>
-            <div>
-              <strong>80+</strong>
-              <span>Ft elevation</span>
-            </div>
-            <div>
-              <strong>3</strong>
-              <span>Day weekend</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      </footer>
 
-      <section className="event-feature-grid" aria-label="Featured races">
-        <article className="event-feature-card feature-highlight">
-          <Trophy aria-hidden="true" />
-          <p>Feature race</p>
-          <h3>Formula Ford</h3>
-          <span>Podium finishers receive Bulova watches.</span>
-        </article>
-        <article className="event-feature-card">
-          <Gauge aria-hidden="true" />
-          <p>Feature race</p>
-          <h3>Formula Vee</h3>
-          <span>
-            A dedicated race for one of vintage racing’s great formulas.
-          </span>
-        </article>
-        <article className="event-feature-card feature-archive">
-          <FileText aria-hidden="true" />
-          <p>September archive</p>
-          <h3>Canyon Classic</h3>
-          <span>Every saved result sheet remains available.</span>
-          <button type="button" onClick={onViewResults}>
-            Browse results <ArrowRight aria-hidden="true" />
-          </button>
-        </article>
-      </section>
-
-      <section className="weekend-board">
-        <div className="weekend-heading">
-          <div>
-            <p className="eyebrow">Race weekend</p>
-            <h2>Three days at Hallett</h2>
-          </div>
-          <a
-            href="https://corinthianvintageautoracing.com/2026-race-calendar/mike-stephens-classic/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Official event page <ExternalLink aria-hidden="true" />
-          </a>
-        </div>
-        <div className="weekend-days">
-          <article>
-            <time>Fri · Oct 9</time>
-            <strong>Test &amp; Tune</strong>
-            <span>
-              Four rounds, lead-follow sessions, and the Formula Vee feature.
-            </span>
-          </article>
-          <article>
-            <time>Sat · Oct 10</time>
-            <strong>Qualifying &amp; races</strong>
-            <span>
-              Practice and qualifying, Races 1–2, and the Formula Ford feature.
-            </span>
-          </article>
-          <article>
-            <time>Sun · Oct 11</time>
-            <strong>Points races</strong>
-            <span>Race 3 points sessions, lunch, and the final Race 4.</span>
-          </article>
-        </div>
-        <button
-          type="button"
-          className="schedule-pending schedule-ready"
-          onClick={onViewSchedule}
-        >
-          <CalendarDays aria-hidden="true" /> The official detailed schedule is
-          now available. <strong>View run order</strong>
-          <ArrowRight aria-hidden="true" />
-        </button>
-      </section>
+      <nav className="tab-bar" aria-label="Sections">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <ViewLink
+              key={item.view}
+              view={item.view}
+              navigate={navigate}
+              className="tab-bar-link"
+              current={view === item.view}
+            >
+              <Icon aria-hidden="true" />
+              {item.short}
+              {item.view === 'timing' && onTrack && (
+                <LiveDot
+                  tone={timing.feedState === 'live' ? 'live' : 'stale'}
+                />
+              )}
+            </ViewLink>
+          );
+        })}
+      </nav>
     </div>
   );
 }
 
-function ViewTab({
-  active,
-  onClick,
+function ViewLink({
+  view,
+  navigate,
+  className,
+  current = false,
   children,
 }: {
-  active: boolean;
-  onClick: () => void;
+  view: HubView;
+  navigate: HubNavigate;
+  className: string;
+  current?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={`view-tab ${active ? 'view-tab-active' : ''}`}
+    <Link
+      href={VIEW_HASH[view] || '/'}
+      prefetch={false}
+      className={className}
+      aria-current={current ? 'page' : undefined}
+      onClick={(event) => {
+        // Let modified clicks open the view in a new tab or window.
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+          return;
+        event.preventDefault();
+        navigate(view);
+      }}
     >
       {children}
-    </button>
+    </Link>
   );
 }
 
-function daysUntilEvent() {
-  const start = new Date('2026-10-09T08:00:00-05:00').getTime();
-  return Math.max(0, Math.ceil((start - Date.now()) / 86_400_000));
-}
-
-function ScheduleView() {
-  return (
-    <div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <div className="schedule-intro">
-        <div>
-          <p className="eyebrow">October 9–11, 2026</p>
-          <h2>20th Mike Stephens Classic</h2>
-        </div>
-        <div className="flex max-w-md flex-col items-start gap-3 lg:items-end">
-          <p className="text-sm text-muted-foreground lg:text-right">
-            Times, durations, and run order are from the official CVAR schedule
-            and may change at the track.
-          </p>
-          <a
-            href={currentEvent.scheduleHref}
-            download
-            className="schedule-download"
-          >
-            <Download aria-hidden="true" /> Download official schedule
-          </a>
-        </div>
-      </div>
-
-      <div className="grid items-start gap-4 lg:grid-cols-3">
-        {eventSchedule.map((day) => (
-          <section key={day.day} className="schedule-day">
-            <header>
-              <div>
-                <span>Race day</span>
-                <h3>{day.day}</h3>
-              </div>
-              <time>{day.date}</time>
-            </header>
-            <div className="schedule-list">
-              {day.items.map((item, index) => (
-                <ScheduleRow
-                  key={`${day.day}-${item.title}-${index}`}
-                  item={item}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-
-      <div className="schedule-note">
-        <strong>Trackside note:</strong> Only clock times published on the
-        official schedule are shown. Later sessions follow the listed run order.
-      </div>
-    </div>
-  );
-}
-
-function ScheduleRow({ item }: { item: ScheduleItem }) {
-  const Icon =
-    item.kind === 'meeting'
-      ? Users
-      : item.kind === 'break'
-        ? Clock3
-        : TimerReset;
-  return (
-    <div className={`schedule-row schedule-row-${item.kind || 'track'}`}>
-      <Icon aria-hidden="true" className="mt-0.5 size-4" />
-      <div>
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <p className="font-semibold text-white">{item.title}</p>
-          {item.time && (
-            <time className="font-mono text-sm text-slate-300">
-              {item.time}
-            </time>
-          )}
-        </div>
-        {item.duration && <p className="schedule-duration">{item.duration}</p>}
-        {item.groups && (
-          <ol className="mt-3 grid gap-1 text-sm text-muted-foreground">
-            {item.groups.map((group, index) => (
-              <li key={`${group}-${index}`} className="flex items-center gap-2">
-                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-400/25 font-mono text-[0.7rem] text-sky-300">
-                  {index + 1}
-                </span>
-                <span>{group}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-        {item.note && (
-          <p className="mt-2 text-sm leading-5 text-muted-foreground">
-            {item.note}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TimingBoard({
-  snapshot,
-  feedState,
-  secondsAgo,
-  sessions,
-  liveSessionId,
-  selectedSessionId,
-  onSessionChange,
+function StatusPill({
+  timing,
+  now,
+  onNavigate,
 }: {
-  snapshot: TimingSnapshot;
-  feedState: FeedState;
-  secondsAgo: number;
-  sessions: TimingSessionSummary[];
-  liveSessionId: string;
-  selectedSessionId: string;
-  onSessionChange: (sessionId: string) => void;
+  timing: LiveTiming;
+  now: number | null;
+  onNavigate: HubNavigate;
 }) {
-  const [activeClass, setActiveClass] = useState('All cars');
-  const classes = useMemo(
-    () => [
-      'All cars',
-      ...new Set(snapshot.cars.map((car) => car.className).filter(Boolean)),
-    ],
-    [snapshot.cars],
-  );
-  const selectedClass = classes.includes(activeClass)
-    ? activeClass
-    : 'All cars';
-  const cars = useMemo(
-    () =>
-      selectedClass === 'All cars'
-        ? snapshot.cars
-        : snapshot.cars.filter((car) => car.className === selectedClass),
-    [selectedClass, snapshot.cars],
-  );
-  const leader = snapshot.cars[0];
-  const resultOrder = resultOrderForSession(
-    snapshot.runName,
-    snapshot.sessionMode,
-  );
-  const positionOrder = resultOrder === 'position';
-  const showPositionMovement =
-    positionOrder && feedState !== 'history' && !raceIsFinished(snapshot.flag);
-  const liveSession = sessions.find((session) => session.id === liveSessionId);
-  const selectedSession = sessions.find(
-    (session) => session.id === selectedSessionId,
-  );
+  const { feedState, snapshot } = timing;
 
-  if (feedState === 'demo') return <TimingStandby />;
-
-  return (
-    <div className="timing-shell mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-      {feedState === 'demo' && (
-        <div className="demo-notice">
-          <Radio aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          <p>
-            <strong>Pre-race timing check.</strong> Live Mike Stephens Classic
-            data will appear here automatically when the timing feed opens.
-          </p>
-        </div>
-      )}
-
-      <section className="timing-hero">
-        <div className="timing-hero-content">
-          <div className="hero-kicker">
-            <span>{snapshot.eventName}</span>
-            <span className="hero-kicker-rule" />
-            <span>Oct 9–11</span>
-          </div>
-          <div className="hero-title-row">
-            <div>
-              <span className={`flag-chip ${flagClassName(snapshot.flag)}`}>
-                <span className="flag-dot" />
-                {snapshot.flag === 'NOT ACTIVE' ? 'Timing' : snapshot.flag}
-                <span className="flag-duration">
-                  ·{' '}
-                  {formatElapsed(
-                    flagElapsedSeconds(snapshot, feedState, secondsAgo),
-                  )}
-                </span>
-              </span>
-              <h2>{formatSessionName(snapshot.runName)}</h2>
-              <p>
-                {snapshot.trackName} ·{' '}
-                {formatTrackSummary(snapshot.trackLength, snapshot.trackName)}
-              </p>
-            </div>
-            <div className="session-clock">
-              <span>Session clock</span>
-              <strong>
-                {sessionClockText(snapshot, feedState, secondsAgo)}
-              </strong>
-            </div>
-          </div>
-        </div>
-        <div className="session-picker">
-          <div className="session-picker-heading">
-            <span className="session-picker-icon" aria-hidden="true">
-              <ListFilter />
-            </span>
-            <div>
-              <p>Switch group or session</p>
-              <span>Choose live timing or a saved result</span>
-            </div>
-          </div>
-          <div className="session-selector">
-            <div className="session-selector-label">
-              <span>Now viewing</span>
-              <span>
-                <MousePointerClick aria-hidden="true" /> Tap to change
-              </span>
-            </div>
-            <Select
-              value={selectedSessionId}
-              onValueChange={(value) => onSessionChange(value || 'live')}
-            >
-              <SelectTrigger
-                aria-label="Switch group or timing session"
-                className="session-select"
-              >
-                <SelectValue>
-                  {selectedSessionId === 'live'
-                    ? `Live · ${formatSessionName(liveSession?.runName || 'Current session')}`
-                    : formatSessionName(
-                        selectedSession?.runName || snapshot.runName,
-                      )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent
-                align="end"
-                className="min-w-72 border-white/10 bg-[#1f3038] text-white"
-              >
-                <SelectItem value="live">
-                  Live ·{' '}
-                  {formatSessionName(liveSession?.runName || 'Current session')}
-                </SelectItem>
-                {sessions
-                  .filter((session) => session.id !== liveSessionId)
-                  .map((session) => (
-                    <SelectItem key={session.id} value={session.id}>
-                      {formatSessionName(session.runName)} ·{' '}
-                      {sessionClockTime(session.startedAt)}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <a
-            className="current-result-download"
-            href={resultSheetHref(
-              CURRENT_EVENT_ID,
-              selectedSessionId === 'live' ? '' : selectedSessionId,
-            )}
-            download
-          >
-            <Download aria-hidden="true" /> Download result sheet
-          </a>
-        </div>
-      </section>
-
-      <section className="stats-grid">
-        <Stat
-          label="Track"
-          value={formatTrackPrimary(snapshot.trackLength)}
-          detail={formatTrackDetail(snapshot.trackLength, snapshot.trackName)}
-        />
-        <Stat
-          label="Leader"
-          value={leader ? `#${leader.number}` : '—'}
-          detail={leader?.bestLap || 'No timed laps'}
-          accent
-        />
-        <Stat
-          label="Cars timed"
-          value={String(snapshot.cars.length)}
-          detail={positionOrder ? 'Race POS order' : 'Best-lap order'}
-        />
-      </section>
-
-      <section className="timing-card">
-        <div className="timing-card-header">
-          <div>
-            <p className="classification-title">
-              {positionOrder
-                ? 'Race position classification'
-                : 'Best-lap classification'}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {positionOrder
-                ? 'Race gaps use elapsed time at the latest completed lap'
-                : 'Practice and timed sessions are ordered by best lap'}
-            </p>
-          </div>
-          <div className="class-filter" aria-label="Filter timing by class">
-            {classes.map((className) => (
-              <Button
-                key={className}
-                type="button"
-                size="sm"
-                variant={selectedClass === className ? 'default' : 'outline'}
-                onClick={() => setActiveClass(className)}
-                className={
-                  selectedClass === className
-                    ? 'class-filter-active'
-                    : 'class-filter-button'
-                }
-              >
-                {className}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        {cars.length > 0 ? (
-          <>
-            <ol
-              className="mobile-timing-list"
-              aria-label="Live timing standings"
-            >
-              {cars.map((car) => (
-                <li
-                  key={car.registrationKey || car.registrationNumber}
-                  className={`mobile-driver-card ${podiumCardClassName(car.position)}`}
-                >
-                  <div className="mobile-position">
-                    <span>Pos</span>
-                    <strong>{car.position || '—'}</strong>
-                    <PodiumMark position={car.position} />
-                    {showPositionMovement && (
-                      <PositionMovement change={car.positionChange || 0} />
-                    )}
-                  </div>
-                  <div className="mobile-driver-identity">
-                    <div>
-                      <span className="mobile-car-number">#{car.number}</span>
-                      {car.position === 1 && (
-                        <span className="mobile-leader-chip">
-                          <Flag aria-hidden="true" /> Leader
-                        </span>
-                      )}
-                    </div>
-                    <strong>{car.driver || `Car ${car.number}`}</strong>
-                    <span>
-                      {[car.groupName, car.className]
-                        .filter(Boolean)
-                        .join(' · ') || 'Class not listed'}
-                    </span>
-                  </div>
-                  <div className="mobile-best-lap">
-                    <span>Best lap</span>
-                    <strong>{car.adjustedBestLap || car.bestLap || '—'}</strong>
-                    <small>
-                      {positionOrder
-                        ? car.position === 1
-                          ? 'Leader'
-                          : car.gap
-                            ? `Gap ${car.gap}`
-                            : 'Gap —'
-                        : car.gap === '—'
-                          ? 'Fastest lap'
-                          : car.gap
-                            ? `${car.gap} to fastest`
-                            : 'No lap gap'}
-                    </small>
-                  </div>
-                  <div className="mobile-driver-details">
-                    <span>
-                      <strong>{car.laps}</strong> laps
-                    </span>
-                    <span>
-                      Total <strong>{car.totalTime || '—'}</strong>
-                    </span>
-                    <span>
-                      Last <strong>{car.lastLap || '—'}</strong>
-                    </span>
-                  </div>
-                  {car.resultAdjustment && (
-                    <p className="mobile-adjustment">
-                      {formatResultAdjustment(car.resultAdjustment)}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ol>
-            <div className="desktop-timing-table overflow-x-auto">
-              <Table className="timing-table">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-16 px-4 font-mono text-xs uppercase tracking-wider text-muted-foreground sm:px-5">
-                      Pos
-                    </TableHead>
-                    <TableHead className="w-20 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                      Car
-                    </TableHead>
-                    <TableHead className="min-w-[210px] font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                      Driver
-                    </TableHead>
-                    <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground md:table-cell">
-                      Group
-                    </TableHead>
-                    <TableHead className="hidden font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">
-                      Class
-                    </TableHead>
-                    <TableHead className="text-right font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                      Laps
-                    </TableHead>
-                    <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground lg:table-cell">
-                      Total time
-                    </TableHead>
-                    <TableHead className="hidden text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:table-cell">
-                      Last lap
-                    </TableHead>
-                    <TableHead className="pr-4 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground sm:pr-5">
-                      <span className="xl:hidden">
-                        {positionOrder ? 'Best / race gap' : 'Best / gap'}
-                      </span>
-                      <span className="hidden xl:inline">Best lap</span>
-                    </TableHead>
-                    <TableHead className="hidden pr-5 text-right font-mono text-xs uppercase tracking-wider text-muted-foreground xl:table-cell">
-                      {positionOrder ? 'Race gap' : 'Gap'}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {cars.map((car) => (
-                    <TableRow
-                      key={car.registrationKey || car.registrationNumber}
-                      className={podiumRowClassName(car.position)}
-                    >
-                      <TableCell className="px-4 py-4 sm:px-5">
-                        <div className="flex items-center gap-2">
-                          <span className="position-stack">
-                            <span className="position-number">
-                              {car.position || '—'}
-                            </span>
-                            <PodiumMark position={car.position} />
-                          </span>
-                          {showPositionMovement && (
-                            <PositionMovement
-                              change={car.positionChange || 0}
-                            />
-                          )}
-                          {car.position === 1 && (
-                            <Flag
-                              aria-label="Session leader"
-                              className="leader-flag"
-                            />
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="car-number">{car.number}</span>
-                      </TableCell>
-                      <TableCell className="py-4">
-                        <p className="font-semibold text-white">
-                          {car.driver || `Car ${car.number}`}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground md:hidden">
-                          {[car.groupName, car.className]
-                            .filter(Boolean)
-                            .join(' · ') || car.car}
-                        </p>
-                        {car.car && (
-                          <p className="mt-0.5 hidden text-xs text-muted-foreground md:block">
-                            {car.car}
-                          </p>
-                        )}
-                        {car.resultAdjustment && (
-                          <p className="mt-1 text-xs font-semibold text-amber-300">
-                            {formatResultAdjustment(car.resultAdjustment)}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell className="hidden text-slate-300 md:table-cell">
-                        {car.groupName || '—'}
-                      </TableCell>
-                      <TableCell className="hidden text-slate-300 lg:table-cell">
-                        {car.className || '—'}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-base tabular-nums">
-                        {car.laps}
-                      </TableCell>
-                      <TableCell className="hidden text-right font-mono text-base tabular-nums text-slate-300 lg:table-cell">
-                        {car.totalTime || '—'}
-                      </TableCell>
-                      <TableCell className="hidden text-right font-mono text-base tabular-nums text-slate-300 sm:table-cell">
-                        {car.lastLap || '—'}
-                      </TableCell>
-                      <TableCell className="best-lap pr-4 text-right sm:pr-5">
-                        {car.adjustedBestLap || car.bestLap || '—'}
-                        {car.adjustedBestLap && (
-                          <span className="mt-0.5 block text-[0.65rem] font-normal text-muted-foreground">
-                            raw {car.bestLap}
-                          </span>
-                        )}
-                        <span className="mt-1 block text-[0.7rem] font-semibold text-sky-300 xl:hidden">
-                          {car.position === 1
-                            ? 'Leader'
-                            : `${positionOrder ? 'Race gap' : 'Gap'} ${car.gap || '—'}`}
-                        </span>
-                      </TableCell>
-                      <TableCell className="hidden pr-5 text-right font-mono text-sm tabular-nums text-muted-foreground xl:table-cell">
-                        {car.gap || '—'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </>
-        ) : (
-          <div className="grid min-h-64 place-items-center p-8 text-center">
-            <div>
-              <Flag className="mx-auto mb-3 size-7 text-muted-foreground" />
-              <p className="font-semibold">Waiting for the first timed car</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Cars appear here after crossing start / finish.
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <footer className="timing-footer">
-        <span className="flex items-center gap-2">
-          <RotateCcw aria-hidden="true" className="size-3.5" />{' '}
-          {feedState === 'demo'
-            ? 'Showing rehearsal data'
-            : feedState === 'history'
-              ? 'Viewing saved session results'
-              : `Updated ${secondsAgo < 2 ? 'just now' : `${secondsAgo} seconds ago`}`}
-        </span>
-        <span>
-          Unofficial timing · Results are final only after steward review
-        </span>
-      </footer>
-    </div>
-  );
-}
-
-function TimingStandby() {
-  return (
-    <div className="timing-standby mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <section className="standby-board">
-        <div className="standby-copy">
-          <p className="eyebrow">Live timing · October 9–11</p>
-          <h2>
-            The board is ready.
-            <br />
-            The track is quiet.
-          </h2>
-          <p>
-            Timing will switch on automatically when the Mike Stephens Classic
-            begins at Hallett.
-          </p>
-        </div>
-        <div className="standby-status">
-          <span className="standby-light" aria-hidden="true" />
-          <p>System status</p>
-          <strong>Waiting for Orbits</strong>
-          <span>No refresh needed</span>
-        </div>
-      </section>
-      <div className="standby-details">
-        <div>
-          <strong>Automatic</strong>
-          <span>
-            Live standings appear when the first session is published.
-          </span>
-        </div>
-        <div>
-          <strong>Every session</strong>
-          <span>Completed classifications are saved as downloadable PDFs.</span>
-        </div>
-        <div>
-          <strong>Mobile ready</strong>
-          <span>Follow position, laps, best time, and gap from trackside.</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ResultsView({
-  snapshot,
-  feedState,
-  sessions,
-  archiveSessions,
-  liveSessionId,
-}: {
-  snapshot: TimingSnapshot;
-  feedState: FeedState;
-  sessions: TimingSessionSummary[];
-  archiveSessions: TimingSessionSummary[];
-  liveSessionId: string;
-}) {
-  const currentSessions = sessions.filter(
-    (session) => session.id !== liveSessionId,
-  );
-
-  return (
-    <div className="results-shell mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <section className="results-intro results-intro-archive">
-        <div>
-          <p className="eyebrow">Permanent driver archive</p>
-          <h2>Race results, ready to download</h2>
-          <p>
-            The Canyon Classic is finished, but every saved classification
-            remains available as a printable PDF. October result sheets will
-            appear here as the Mike Stephens Classic gets underway.
-          </p>
-        </div>
-        <div className="results-paper-preview" aria-hidden="true">
-          <div className="preview-stripe" />
-          <strong>CVAR</strong>
-          <span>RESULT SHEET</span>
-          <div className="preview-lines">
-            <i />
-            <i />
-            <i />
-            <i />
-          </div>
-        </div>
-      </section>
-
-      {feedState !== 'demo' && (
-        <section className="featured-result">
-          <div className="result-file-icon">
-            <FileText aria-hidden="true" />
-          </div>
-          <div className="result-copy">
-            <div className="result-status">
-              <span
-                className={feedState === 'live' ? 'result-status-live' : ''}
-              />
-              Current timing
-            </div>
-            <h3>{formatSessionName(snapshot.runName)}</h3>
-            <p>
-              {snapshot.trackName} · {snapshot.cars.length} cars ·{' '}
-              {snapshot.flag || 'Timing recorded'}
-            </p>
-          </div>
-          <a
-            className="result-download result-download-primary"
-            href={resultSheetHref(CURRENT_EVENT_ID, '')}
-            download
-          >
-            <Download aria-hidden="true" /> Download PDF
-          </a>
-        </section>
-      )}
-
-      <div className="results-section-heading">
-        <div>
-          <p className="eyebrow">October 9–11 · Hallett</p>
-          <h3>Mike Stephens Classic</h3>
-        </div>
-        <span>
-          {currentSessions.length}{' '}
-          {currentSessions.length === 1 ? 'sheet' : 'sheets'} available
-        </span>
-      </div>
-
-      {currentSessions.length ? (
-        <div className="result-grid">
-          {currentSessions.map((session) => (
-            <article key={session.id} className="result-card">
-              <div className="result-card-top">
-                <div className="result-file-icon result-file-icon-small">
-                  <FileText aria-hidden="true" />
-                </div>
-                <span>{session.flag || 'Recorded'}</span>
-              </div>
-              <h4>{formatSessionName(session.runName)}</h4>
-              <p>
-                {formatSessionDate(session.startedAt)} · {session.carCount} cars
-              </p>
-              <a
-                className="result-download"
-                href={resultSheetHref(CURRENT_EVENT_ID, session.id)}
-                download
-              >
-                <Download aria-hidden="true" /> Download PDF
-              </a>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <div className="results-empty">
-          <FileText aria-hidden="true" />
-          <h3>October result sheets will appear here</h3>
-          <p>
-            Timing is ready. The first downloadable sheet is created as soon as
-            a session records cars on track.
-          </p>
-        </div>
-      )}
-
-      <div className="results-section-heading results-archive-heading">
-        <div>
-          <p className="eyebrow">September 11–13 · Eagles Canyon</p>
-          <h3>Canyon Classic archive</h3>
-        </div>
-        <div className="archive-heading-actions">
-          <a href="/ECR-Fall-2026-Schedule.pdf" download>
-            Official schedule <Download aria-hidden="true" />
-          </a>
-          <span>
-            {archiveSessions.length}{' '}
-            {archiveSessions.length === 1 ? 'sheet' : 'sheets'} available
-          </span>
-        </div>
-      </div>
-
-      {archiveSessions.length ? (
-        <div className="result-grid result-grid-archive">
-          {archiveSessions.map((session) => (
-            <article
-              key={session.id}
-              className="result-card result-card-archive"
-            >
-              <div className="result-card-top">
-                <div className="result-file-icon result-file-icon-small">
-                  <FileText aria-hidden="true" />
-                </div>
-                <span>{session.flag || 'Recorded'}</span>
-              </div>
-              <h4>{formatSessionName(session.runName)}</h4>
-              <p>
-                {formatSessionDate(session.startedAt)} · {session.carCount} cars
-              </p>
-              <a
-                className="result-download"
-                href={resultSheetHref(ARCHIVE_EVENT_ID, session.id)}
-                download
-              >
-                <Download aria-hidden="true" /> Download PDF
-              </a>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <div className="results-empty">
-          <FileText aria-hidden="true" />
-          <h3>Connecting to the Canyon Classic archive</h3>
-          <p>Saved sheets will appear when timing storage is available.</p>
-        </div>
-      )}
-
-      <p className="results-disclaimer">
-        Unofficial timing · Results are final only after steward review
-      </p>
-    </div>
-  );
-}
-
-function useLiveTiming() {
-  const [snapshot, setSnapshot] = useState<TimingSnapshot>(demoSnapshot);
-  const [feedState, setFeedState] = useState<FeedState>('demo');
-  const [clock, setClock] = useState(0);
-  const [sessions, setSessions] = useState<TimingSessionSummary[]>([]);
-  const [archiveSessions, setArchiveSessions] = useState<
-    TimingSessionSummary[]
-  >([]);
-  const [liveSessionId, setLiveSessionId] = useState('');
-  const [selectedSessionId, setSelectedSessionId] = useState('live');
-  const hasReceivedData = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function refreshSessions() {
-      try {
-        const response = await fetch(`/api/sessions?event=${CURRENT_EVENT_ID}`);
-        if (!response.ok) return;
-        const body = (await response.json()) as {
-          liveSessionId?: unknown;
-          sessions?: unknown;
-        };
-        if (cancelled || !Array.isArray(body.sessions)) return;
-        setSessions(
-          (body.sessions as TimingSessionSummary[]).filter(
-            (session) => session.carCount > 0,
-          ),
-        );
-        if (typeof body.liveSessionId === 'string')
-          setLiveSessionId(body.liveSessionId);
-      } catch {
-        // Live timing can continue even if the session menu refresh is delayed.
-      }
-    }
-    void refreshSessions();
-    const timer = window.setInterval(refreshSessions, 10_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function refreshArchive() {
-      try {
-        const response = await fetch(`/api/sessions?event=${ARCHIVE_EVENT_ID}`);
-        if (!response.ok) return;
-        const body = (await response.json()) as { sessions?: unknown };
-        if (cancelled || !Array.isArray(body.sessions)) return;
-        setArchiveSessions(
-          (body.sessions as TimingSessionSummary[]).filter(
-            (session) => session.carCount > 0,
-          ),
-        );
-      } catch {
-        // The event page remains usable if archive storage is temporarily offline.
-      }
-    }
-    void refreshArchive();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function refresh() {
-      try {
-        const endpoint =
-          selectedSessionId === 'live'
-            ? `/api/live?event=${CURRENT_EVENT_ID}`
-            : `/api/sessions?event=${CURRENT_EVENT_ID}&session=${encodeURIComponent(selectedSessionId)}`;
-        const response = await fetch(endpoint);
-        if (!response.ok)
-          throw new Error(`Timing endpoint returned ${response.status}`);
-        const body = (await response.json()) as { snapshot?: unknown };
-        if (!isTimingSnapshot(body.snapshot))
-          throw new Error('Invalid timing snapshot');
-        if (cancelled) return;
-        hasReceivedData.current = true;
-        setSnapshot(rankSnapshotForSession(body.snapshot));
-        setFeedState(
-          selectedSessionId === 'live'
-            ? Date.now() - new Date(body.snapshot.updatedAt).getTime() > 15_000
-              ? 'stale'
-              : 'live'
-            : 'history',
-        );
-      } catch {
-        if (!cancelled && hasReceivedData.current) setFeedState('stale');
-      }
-    }
-    void refresh();
-    const poller =
-      selectedSessionId === 'live'
-        ? window.setInterval(refresh, 2_000)
-        : undefined;
-    const ticker = window.setInterval(() => setClock(Date.now()), 1_000);
-    return () => {
-      cancelled = true;
-      if (poller) window.clearInterval(poller);
-      window.clearInterval(ticker);
-    };
-  }, [selectedSessionId]);
-
-  const timestamp = new Date(snapshot.updatedAt).getTime();
-  const secondsAgo = Number.isFinite(timestamp)
-    ? Math.max(0, Math.floor((clock - timestamp) / 1_000))
-    : 0;
-  return {
-    snapshot,
-    feedState:
-      feedState === 'live' && secondsAgo > 15 ? ('stale' as const) : feedState,
-    secondsAgo,
-    sessions,
-    archiveSessions,
-    liveSessionId,
-    selectedSessionId,
-    selectSession: setSelectedSessionId,
-  };
-}
-
-function FeedBadge({ state }: { state: FeedState }) {
-  if (state === 'live')
+  if (feedState === 'live' || feedState === 'stale')
     return (
-      <div className="feed-badge feed-live">
-        <Radio aria-hidden="true" />
-        <span className="hidden sm:inline">Timing feed live</span>
-        <span className="sm:hidden">Live</span>
-      </div>
+      <button
+        type="button"
+        className="status-pill"
+        data-state={feedState}
+        onClick={() => onNavigate('timing')}
+      >
+        <LiveDot tone={feedState === 'live' ? 'live' : 'stale'} />
+        <span className="status-pill-strong">
+          {feedState === 'live' ? 'Live' : 'Delayed'}
+        </span>
+        <span className="status-pill-text">
+          {formatSessionName(snapshot.runName)}
+        </span>
+      </button>
     );
-  if (state === 'history')
-    return (
-      <div className="feed-badge feed-history">
-        <Clock3 aria-hidden="true" />
-        <span className="hidden sm:inline">Past session</span>
-        <span className="sm:hidden">Past</span>
-      </div>
-    );
-  if (state === 'stale')
-    return (
-      <div className="feed-badge feed-stale">
-        <WifiOff aria-hidden="true" />
-        <span className="hidden sm:inline">Feed delayed</span>
-        <span className="sm:hidden">Delayed</span>
-      </div>
-    );
-  return (
-    <div className="feed-badge feed-demo">
-      <Radio aria-hidden="true" />
-      <span className="hidden sm:inline">Demo mode</span>
-      <span className="sm:hidden">Demo</span>
-    </div>
-  );
-}
 
-function Stat({
-  label,
-  value,
-  detail,
-  accent = false,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  accent?: boolean;
-}) {
-  return (
-    <div className={`stat-card ${accent ? 'stat-card-accent' : ''}`}>
-      <p>{label}</p>
-      <strong>{value}</strong>
-      <span>{detail}</span>
-    </div>
-  );
-}
-
-function sessionClockText(
-  snapshot: TimingSnapshot,
-  feedState: FeedState,
-  secondsAgo: number,
-) {
   if (feedState === 'history')
-    return snapshot.raceTime
-      ? `${shortTime(snapshot.raceTime)} elapsed`
-      : 'Completed session';
-  if (['FINISH', 'FINISHED', 'CHECKERED', 'CHEQUERED'].includes(snapshot.flag))
-    return snapshot.raceTime
-      ? `Finished · ${shortTime(snapshot.raceTime)} elapsed`
-      : 'Session finished';
-  if (snapshot.flag === 'NOT ACTIVE') return 'Session not active';
-  if (snapshot.timeToGo) {
-    const shouldTick =
-      feedState === 'live' && ['GREEN', 'YELLOW'].includes(snapshot.flag);
-    return `${shouldTick ? countdownTime(snapshot.timeToGo, secondsAgo) : shortTime(snapshot.timeToGo)} remaining`;
-  }
-  if (snapshot.lapsToGo !== null && snapshot.lapsToGo < 9_999)
-    return `${snapshot.lapsToGo} laps to go`;
-  return 'Session active';
-}
+    return (
+      <button
+        type="button"
+        className="status-pill"
+        data-state="history"
+        onClick={() => {
+          timing.selectSession('live');
+          onNavigate('timing');
+        }}
+      >
+        <HistoryIcon aria-hidden="true" />
+        <span className="status-pill-text status-pill-long">
+          Saved session · Back to live
+        </span>
+        <span className="status-pill-text status-pill-short">Saved</span>
+      </button>
+    );
 
-function flagElapsedSeconds(
-  snapshot: TimingSnapshot,
-  feedState: FeedState,
-  secondsAgo: number,
-) {
-  const startedAt = new Date(
-    snapshot.flagStartedAt || snapshot.initializedAt || snapshot.updatedAt,
-  ).getTime();
-  const updatedAt = new Date(snapshot.updatedAt).getTime();
-  if (!Number.isFinite(startedAt) || !Number.isFinite(updatedAt)) return 0;
-  const endAt =
-    feedState === 'history' ? updatedAt : updatedAt + secondsAgo * 1_000;
-  return Math.max(0, Math.floor((endAt - startedAt) / 1_000));
-}
-
-function formatElapsed(totalSeconds: number) {
-  const hours = Math.floor(totalSeconds / 3_600);
-  const minutes = Math.floor((totalSeconds % 3_600) / 60);
-  const seconds = totalSeconds % 60;
-  return hours
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-    : `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function flagClassName(value: string) {
-  const flag = value.trim().toLowerCase();
-  if (flag.includes('yellow')) return 'flag-yellow';
-  if (flag.includes('red')) return 'flag-red';
-  if (flag.includes('blue')) return 'flag-blue';
-  if (flag.includes('white')) return 'flag-white';
-  if (flag.includes('black')) return 'flag-black';
-  if (/finish|checkered|chequered/.test(flag)) return 'flag-checkered';
-  if (flag.includes('green')) return 'flag-green';
-  return 'flag-inactive';
-}
-
-function raceIsFinished(value: string) {
-  const flag = value.trim().toLowerCase();
-  return flag === 'not active' || /finish|checkered|chequered/.test(flag);
-}
-
-function PositionMovement({ change }: { change: number }) {
-  if (!change) return null;
-  const gained = change > 0;
-  const amount = Math.abs(change);
-  const label = `${gained ? 'Gained' : 'Lost'} ${amount} ${amount === 1 ? 'position' : 'positions'} since the last lap`;
+  const phase = now === null ? null : eventPhase(now);
+  const days = now === null ? null : daysUntilEvent(now);
+  const [text, shortText] =
+    phase === null
+      ? [currentEvent.shortDates, currentEvent.shortDates]
+      : phase === 'before'
+        ? days === 0
+          ? ['Green flag today', 'Today']
+          : days === 1
+            ? ['Green flag tomorrow', 'Tomorrow']
+            : [`Green flag in ${days} days`, `${days} days`]
+        : phase === 'during'
+          ? ['Between sessions', 'Idle']
+          : ['Weekend complete', 'Complete'];
 
   return (
-    <span
-      className={`position-movement ${gained ? 'position-movement-up' : 'position-movement-down'}`}
-      aria-label={label}
-      title={label}
-    >
-      {gained ? (
-        <ArrowUp aria-hidden="true" />
-      ) : (
-        <ArrowDown aria-hidden="true" />
-      )}
-      <span>{amount}</span>
+    <span className="status-pill" data-state="idle">
+      <LiveDot tone="idle" />
+      <span className="status-pill-text status-pill-long">{text}</span>
+      <span className="status-pill-text status-pill-short">{shortText}</span>
     </span>
   );
-}
-
-function PodiumMark({ position }: { position: number }) {
-  if (position < 1 || position > 3) return null;
-  const place = ['first', 'second', 'third'][position - 1];
-  return (
-    <span
-      className={`podium-mark podium-mark-${position}`}
-      role="img"
-      aria-label={`${place} place podium`}
-    >
-      <span className="podium-step podium-step-left" aria-hidden="true" />
-      <span className="podium-step podium-step-center" aria-hidden="true" />
-      <span className="podium-step podium-step-right" aria-hidden="true" />
-    </span>
-  );
-}
-
-function podiumCardClassName(position: number) {
-  return position >= 1 && position <= 3
-    ? `mobile-driver-podium mobile-driver-podium-${position}`
-    : '';
-}
-
-function podiumRowClassName(position: number) {
-  return position >= 1 && position <= 3
-    ? `desktop-driver-podium desktop-driver-podium-${position}`
-    : undefined;
-}
-
-function countdownTime(value: string, secondsElapsed: number) {
-  const match = value.match(/^(\d+):(\d{2}):(\d{2})(?:\.\d+)?$/);
-  if (!match) return shortTime(value);
-  const remaining = Math.max(
-    0,
-    Number(match[1]) * 3_600 +
-      Number(match[2]) * 60 +
-      Number(match[3]) -
-      secondsElapsed,
-  );
-  const hours = Math.floor(remaining / 3_600);
-  const minutes = Math.floor((remaining % 3_600) / 60);
-  const seconds = remaining % 60;
-  return `${hours ? `${hours}:` : ''}${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function sessionClockTime(value: string) {
-  const date = new Date(value);
-  return Number.isFinite(date.getTime())
-    ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : '';
-}
-
-function formatSessionDate(value: string) {
-  const date = new Date(value);
-  return Number.isFinite(date.getTime())
-    ? date.toLocaleString([], {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-    : 'Saved session';
-}
-
-function resultSheetHref(eventId: string, sessionId: string) {
-  const params = new URLSearchParams({ event: eventId });
-  if (sessionId) params.set('session', sessionId);
-  return `/api/result-sheet?${params.toString()}`;
-}
-
-function formatResultAdjustment(
-  adjustment: NonNullable<TimingSnapshot['cars'][number]['resultAdjustment']>,
-) {
-  const parts = [
-    adjustment.status,
-    adjustment.penaltySeconds > 0
-      ? `+${adjustment.penaltySeconds.toFixed(3).replace(/\.0+$/, '')}s`
-      : '',
-    adjustment.positionOverride ? `placed P${adjustment.positionOverride}` : '',
-    adjustment.note,
-  ].filter(Boolean);
-  return `Steward adjustment: ${parts.join(' · ')}`;
-}
-
-function shortTime(value: string) {
-  return value.replace(/^00:/, '');
 }

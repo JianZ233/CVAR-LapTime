@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function ControlLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return children;
+// The staff console keeps its original dark palette; see `.theme-night`.
+export default function ControlLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  return <div className="theme-night">{children}</div>;
 }

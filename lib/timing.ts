@@ -393,7 +393,8 @@ function formatElapsedGap(milliseconds: number) {
 export function formatSessionName(value: string) {
   const wheelSession = wheelSessionName(value);
   if (wheelSession) return wheelSession;
-  const match = value.match(/^Gp([0-9,]+)-([^=]+)(?:=(.+))?$/i);
+  // Group codes are usually numbers ("Gp2,7") but can be letters ("GpSE").
+  const match = value.match(/^Gp([0-9A-Z,]+)-([^=]+)(?:=(.+))?$/i);
   if (!match) return value;
   const groups = match[1].split(',');
   const groupLabel =
@@ -438,7 +439,7 @@ export function formatTrackSummary(value: string, trackName = '') {
   return `${formatTrackPrimary(value)} · ${formatTrackDetail(value, trackName)}`;
 }
 
-function lapTimeToMilliseconds(value: string) {
+export function lapTimeToMilliseconds(value: string) {
   if (!value) return Number.POSITIVE_INFINITY;
   const parts = value.split(':');
   const seconds = Number(parts.pop());
