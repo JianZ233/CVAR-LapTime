@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
+  ArrowUpRight,
   CalendarDays,
-  ExternalLink,
   FileText,
   Flag,
   History as HistoryIcon,
@@ -14,6 +15,7 @@ import {
 
 import {
   LiveDot,
+  Roll,
   type HubNavigate,
   type HubView,
 } from '@/components/hub/common';
@@ -81,8 +83,6 @@ export default function Home() {
   }, []);
 
   const navigate = useCallback<HubNavigate>((next, options) => {
-    setScheduleDay(options?.day);
-    setView(next);
     const hash = VIEW_HASH[next];
     if (window.location.hash !== hash)
       window.history.pushState(
@@ -90,7 +90,18 @@ export default function Home() {
         '',
         hash || `${window.location.pathname}${window.location.search}`,
       );
-    window.scrollTo({ top: 0 });
+    const swap = () => {
+      setScheduleDay(options?.day);
+      setView(next);
+      window.scrollTo({ top: 0 });
+    };
+    // Cross-fade between views where the browser supports it. flushSync
+    // lets the transition capture the new view in the same frame.
+    const motionOk = !window.matchMedia('(prefers-reduced-motion: reduce)')
+      .matches;
+    if (motionOk && 'startViewTransition' in document)
+      document.startViewTransition(() => flushSync(swap));
+    else swap();
   }, []);
 
   const onTrack = timing.feedState === 'live' || timing.feedState === 'stale';
@@ -100,8 +111,8 @@ export default function Home() {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <header className="site-header">
-        <div className="wrap site-header-inner">
+      <header className="masthead">
+        <div className="wrap masthead-inner">
           <ViewLink view="event" navigate={navigate} className="brand">
             <img
               src="/cvar-logo.png"
@@ -110,15 +121,23 @@ export default function Home() {
               width={350}
               height={156}
             />
+            {/* Phones lead with the product, desktops with the event,
+                because "Live timing" already sits in the desktop nav. */}
             <span className="brand-text">
-              <span className="brand-title">Live timing</span>
+              <span className="brand-title">
+                <span className="brand-wide">{currentEvent.shortName}</span>
+                <span className="brand-narrow">Live timing</span>
+              </span>
               <span className="brand-event">
-                {currentEvent.shortName} · Hallett
+                <span className="brand-wide">CVAR live timing · Hallett</span>
+                <span className="brand-narrow">
+                  {currentEvent.shortName} · Hallett
+                </span>
               </span>
             </span>
           </ViewLink>
           <nav className="site-nav" aria-label="Sections">
-            {NAV_ITEMS.map((item) => (
+            {NAV_ITEMS.map((item, index) => (
               <ViewLink
                 key={item.view}
                 view={item.view}
@@ -126,7 +145,10 @@ export default function Home() {
                 className="site-nav-link"
                 current={view === item.view}
               >
-                {item.label}
+                <span className="site-nav-index" aria-hidden="true">
+                  0{index + 1}
+                </span>
+                <Roll>{item.label}</Roll>
                 {item.view === 'timing' && onTrack && (
                   <LiveDot
                     tone={timing.feedState === 'live' ? 'live' : 'stale'}
@@ -139,7 +161,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main id="main" className="hub-main">
+      <main id="main" className="hub-main" data-view={view}>
         {view === 'event' ? (
           <RaceHQ timing={timing} now={now} onNavigate={navigate} />
         ) : view === 'timing' ? (
@@ -155,34 +177,58 @@ export default function Home() {
         )}
       </main>
 
-      <footer className="site-footer">
-        <div className="wrap site-footer-inner">
-          <div className="footer-brand">
-            <img src="/cvar-logo.png" alt="" width={350} height={156} />
-            <p>
-              <strong>Corinthian Vintage Auto Racing</strong>
+      <footer className="footer">
+        <div className="footer-checker" aria-hidden="true" />
+        <div className="wrap footer-inner">
+          <div className="footer-top">
+            <img
+              className="footer-logo"
+              src="/cvar-logo.png"
+              alt=""
+              width={350}
+              height={156}
+            />
+            <nav className="footer-links" aria-label="CVAR links">
+              <a
+                href="https://corinthianvintageautoracing.com"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Roll>CVAR website</Roll>
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+              <a
+                href={currentEvent.eventPageHref}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Roll>Event page</Roll>
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+              <a
+                href={currentEvent.registrationHref}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Roll>Registration</Roll>
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+            </nav>
+          </div>
+          {/* The big sign-off belongs to the event page; the boards and
+              lists end quietly. */}
+          {view === 'event' && (
+            <p className="footer-wordmark" aria-hidden="true">
+              <span>Corinthian</span>
               <span>
-                Unofficial live timing · Results are final only after steward
-                review
+                Vintage <em className="serif">Auto</em> Racing
               </span>
             </p>
+          )}
+          <div className="footer-fine">
+            <span>© 2026 Corinthian Vintage Auto Racing</span>
+            <span>Unofficial live timing</span>
           </div>
-          <nav className="footer-links" aria-label="CVAR links">
-            <a
-              href="https://corinthianvintageautoracing.com"
-              target="_blank"
-              rel="noreferrer"
-            >
-              CVAR website <ExternalLink aria-hidden="true" />
-            </a>
-            <a
-              href={currentEvent.eventPageHref}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Event page <ExternalLink aria-hidden="true" />
-            </a>
-          </nav>
         </div>
       </footer>
 
@@ -294,22 +340,27 @@ function StatusPill({
 
   const phase = now === null ? null : eventPhase(now);
   const days = now === null ? null : daysUntilEvent(now);
+  // Name the moment rather than count days, so the pill never disagrees
+  // with the hour-accurate countdown on Race HQ.
   const [text, shortText] =
     phase === null
       ? [currentEvent.shortDates, currentEvent.shortDates]
       : phase === 'before'
         ? days === 0
-          ? ['Green flag today', 'Today']
+          ? ['Green flag today · 8:00 AM', 'Today']
           : days === 1
-            ? ['Green flag tomorrow', 'Tomorrow']
-            : [`Green flag in ${days} days`, `${days} days`]
+            ? ['Green flag tomorrow · 8:00 AM', 'Tomorrow']
+            : ['Green flag Fri, Oct 9 · 8:00 AM', 'Oct 9']
         : phase === 'during'
           ? ['Between sessions', 'Idle']
           : ['Weekend complete', 'Complete'];
 
   return (
-    <span className="status-pill" data-state="idle">
-      <LiveDot tone="idle" />
+    <span
+      className="status-pill"
+      data-state={phase === 'before' ? 'soon' : 'idle'}
+    >
+      <LiveDot tone={phase === 'before' ? 'soon' : 'idle'} />
       <span className="status-pill-text status-pill-long">{text}</span>
       <span className="status-pill-text status-pill-short">{shortText}</span>
     </span>

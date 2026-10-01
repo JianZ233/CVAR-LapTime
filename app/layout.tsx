@@ -1,28 +1,22 @@
 import type { Metadata, Viewport } from 'next';
-import {
-  Barlow,
-  Barlow_Condensed,
-  Barlow_Semi_Condensed,
-} from 'next/font/google';
+import { Archivo, Instrument_Serif } from 'next/font/google';
 import './globals.css';
 
-const barlow = Barlow({
-  variable: '--font-barlow',
+// One variable family covers the whole range: extra-expanded for display
+// lettering, normal width for reading, and condensed tabular figures for
+// timing data.
+const archivo = Archivo({
+  variable: '--font-archivo',
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  axes: ['wdth'],
 });
 
-// Tabular figures keep lap times aligned in the timing tables.
-const barlowSemiCondensed = Barlow_Semi_Condensed({
-  variable: '--font-barlow-semi',
+// Editorial accent, used sparingly in headings.
+const instrumentSerif = Instrument_Serif({
+  variable: '--font-serif',
   subsets: ['latin'],
-  weight: ['500', '600', '700'],
-});
-
-const barlowCondensed = Barlow_Condensed({
-  variable: '--font-barlow-condensed',
-  subsets: ['latin'],
-  weight: ['600', '700', '800'],
+  weight: '400',
+  style: 'italic',
 });
 
 export const metadata: Metadata = {
@@ -35,7 +29,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#0f1315',
+  themeColor: '#0b0d0e',
 };
 
 export default function RootLayout({
@@ -48,7 +42,7 @@ export default function RootLayout({
     // (--font-sans, --font-display, --font-data) resolve.
     <html
       lang="en"
-      className={`${barlow.variable} ${barlowSemiCondensed.variable} ${barlowCondensed.variable}`}
+      className={`${archivo.variable} ${instrumentSerif.variable}`}
     >
       <body className="antialiased">{children}</body>
     </html>

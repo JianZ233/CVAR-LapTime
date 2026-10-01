@@ -127,7 +127,7 @@ export const eventSchedule: ScheduleDay[] = [
         kind: 'track',
       },
       {
-        title: 'Race 3 - Points',
+        title: 'Race 3 – Points',
         time: '8:15 AM',
         duration: '20 minutes per group',
         groups: raceRunOrder,

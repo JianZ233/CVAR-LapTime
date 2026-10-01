@@ -1,7 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 
-import { FlagPill, LiveDot, PageHeading } from '@/components/hub/common';
+import {
+  FlagPill,
+  Kicker,
+  LiveDot,
+  PageHeading,
+  Roll,
+} from '@/components/hub/common';
 import type { LiveTiming } from '@/hooks/use-live-timing';
 import {
   ARCHIVE_EVENT_ID,
@@ -14,6 +20,7 @@ import {
   compareGroups,
   flagLabel,
   formatTrackTime,
+  raceIsFinished,
   groupSessionsByDay,
   resultSheetHref,
   sessionTitleParts,
@@ -41,7 +48,11 @@ export function ResultsView({ timing }: { timing: LiveTiming }) {
 
   return (
     <div className="wrap page">
-      <PageHeading eyebrow="Result sheets" title="Results">
+      <PageHeading
+        eyebrow={<Kicker>Result sheets</Kicker>}
+        title="Results"
+        accent="every session, on paper"
+      >
         Printable PDF classifications for every timed session. Results are
         unofficial until steward review.
       </PageHeading>
@@ -53,6 +64,7 @@ export function ResultsView({ timing }: { timing: LiveTiming }) {
           aria-pressed={tab === 'current'}
           onClick={() => setPickedTab('current')}
         >
+          <span className="event-switch-kicker">This weekend</span>
           <strong>{currentEvent.shortName}</strong>
           <span>
             {currentEvent.shortDates}
@@ -68,6 +80,7 @@ export function ResultsView({ timing }: { timing: LiveTiming }) {
           aria-pressed={tab === 'archive'}
           onClick={() => setPickedTab('archive')}
         >
+          <span className="event-switch-kicker">Archive</span>
           <strong>{archivedEvent.shortName}</strong>
           <span>
             {archivedEvent.shortDates}
@@ -99,7 +112,8 @@ export function ResultsView({ timing }: { timing: LiveTiming }) {
                 href={resultSheetHref(CURRENT_EVENT_ID, '')}
                 download
               >
-                <Download aria-hidden="true" /> Download PDF
+                <Download aria-hidden="true" className="icon-drop" />
+                <Roll>Download PDF</Roll>
               </a>
             </article>
           )}
@@ -120,8 +134,13 @@ export function ResultsView({ timing }: { timing: LiveTiming }) {
           emptyTitle="The Canyon Classic archive is unavailable"
           emptyText="Saved sheets will appear when timing storage is reachable."
           extra={
-            <a className="text-link" href={archivedEvent.scheduleHref} download>
-              <Download aria-hidden="true" /> Official schedule
+            <a
+              className="arrow-link"
+              href={archivedEvent.scheduleHref}
+              download
+            >
+              <Download aria-hidden="true" className="icon-drop" />
+              <Roll>Official schedule</Roll>
             </a>
           }
         />
@@ -213,62 +232,78 @@ function SessionSheets({
         </div>
       </div>
 
-      {days.map((day) => (
-        <section key={day.key} className="result-day">
-          <h2 className="result-day-title">
-            {day.label}
-            <span>
-              {day.sessions.length}{' '}
-              {day.sessions.length === 1 ? 'sheet' : 'sheets'}
-            </span>
-          </h2>
-          <ul className="result-list">
-            {day.sessions.map((session) => {
-              const { title, group: groupLabel } = sessionTitleParts(
-                session.runName,
-                session.groups,
-              );
-              const time = formatTrackTime(session.startedAt);
-              return (
-                <li key={session.id} className="result-row">
-                  <span className="result-time">{time}</span>
-                  <div className="result-main">
-                    <p className="result-title">{title}</p>
-                    <p className="result-meta">
-                      {[
-                        groupLabel,
-                        `${session.carCount} ${session.carCount === 1 ? 'car' : 'cars'}`,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                      <span className="result-meta-mobile">
-                        {time && ` · ${time}`}
-                        {session.flag && ` · ${flagLabel(session.flag)}`}
-                      </span>
-                    </p>
-                  </div>
-                  <span className="result-flag">
-                    {session.flag ? (
-                      <FlagPill flag={session.flag} size="sm" />
-                    ) : (
-                      'Recorded'
-                    )}
-                  </span>
-                  <a
-                    className="button button-secondary button-sm result-download"
-                    href={resultSheetHref(eventId, session.id)}
-                    download
-                    aria-label={`Download PDF result sheet for ${formatSessionName(session.runName)}`}
-                  >
-                    <Download aria-hidden="true" />
-                    <span>PDF</span>
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+      <div className="result-days">
+        {days.map((day) => (
+          <section key={day.key} className="result-day">
+            <h2 className="result-day-title">
+              <DayLabel label={day.label} />
+              <span className="result-day-count">
+                {day.sessions.length}{' '}
+                {day.sessions.length === 1 ? 'sheet' : 'sheets'}
+              </span>
+            </h2>
+            <ul className="result-list">
+              {day.sessions.map((session) => {
+                const { title, group: groupLabel } = sessionTitleParts(
+                  session.runName,
+                  session.groups,
+                );
+                const time = formatTrackTime(session.startedAt);
+                return (
+                  <li key={session.id} className="result-row">
+                    <span className="result-time">{time}</span>
+                    <div className="result-main">
+                      <p className="result-title">{title}</p>
+                      <p className="result-meta">
+                        {[
+                          groupLabel,
+                          `${session.carCount} ${session.carCount === 1 ? 'car' : 'cars'}`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                        {/* Most sheets end on the checkered flag; only call
+                          out the ones that did not. */}
+                        {session.flag && !raceIsFinished(session.flag) && (
+                          <FlagPill flag={session.flag} size="sm" />
+                        )}
+                      </p>
+                    </div>
+                    <a
+                      className="button button-outline button-sm result-download"
+                      href={resultSheetHref(eventId, session.id)}
+                      download
+                      aria-label={`Download PDF result sheet for ${formatSessionName(session.runName)}`}
+                    >
+                      <Download aria-hidden="true" className="icon-drop" />
+                      <span>PDF</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
+      </div>
     </>
+  );
+}
+
+/** "Saturday, Oct 10" as the outlined day numeral used across the hub. */
+function DayLabel({ label }: { label: string }) {
+  const match = label.match(/^(\w+), (\w+) (\d+)$/);
+  if (!match) return <span className="result-day-label">{label}</span>;
+  const [, weekday, month, date] = match;
+  return (
+    <span className="result-day-label">
+      <span className="result-day-num" aria-hidden="true">
+        {date.padStart(2, '0')}
+      </span>
+      <span className="result-day-name">
+        {weekday}
+        <span>
+          {month} {date}
+        </span>
+      </span>
+    </span>
   );
 }

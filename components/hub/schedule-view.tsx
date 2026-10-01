@@ -1,10 +1,16 @@
 import { useState } from 'react';
 import { Download, Info, PartyPopper, Users, Utensils } from 'lucide-react';
 
-import { PageHeading } from '@/components/hub/common';
+import { Kicker, PageHeading, Roll } from '@/components/hub/common';
 import { currentEvent } from '@/lib/events';
 import { eventSchedule, type ScheduleItem } from '@/lib/schedule';
 import { eventDayIndex } from '@/lib/timing-display';
+
+const isNote = (item: ScheduleItem) =>
+  Boolean(item.note && !item.time && !item.duration);
+
+// Operations notes apply to the whole weekend, so they sit under the days.
+const notes = eventSchedule.flatMap((day) => day.items.filter(isNote));
 
 export function ScheduleView({
   now,
@@ -20,19 +26,22 @@ export function ScheduleView({
   return (
     <div className="wrap page">
       <PageHeading
-        eyebrow={`${currentEvent.dates} · Hallett`}
+        eyebrow={<Kicker>{`${currentEvent.dates} · Hallett`}</Kicker>}
         title="Schedule"
+        accent="three days, run by run"
         actions={
           <a
             href={currentEvent.scheduleHref}
             download
-            className="button button-secondary"
+            className="button button-outline"
           >
-            <Download aria-hidden="true" /> Official schedule (PDF)
+            <Download aria-hidden="true" className="icon-drop" />
+            <Roll>Official schedule (PDF)</Roll>
           </a>
         }
       >
-        Times and run order from the official CVAR schedule. Everything is
+        Times and run order from the official CVAR schedule. Only published
+        clock times are shown; later sessions follow in order. Everything is
         subject to change at the track.
       </PageHeading>
 
@@ -57,45 +66,76 @@ export function ScheduleView({
       </fieldset>
 
       <div className="schedule-grid">
-        {eventSchedule.map((day, index) => (
-          <section
-            key={day.day}
-            className="schedule-day"
-            data-active={index === activeDay}
-            aria-labelledby={`schedule-${day.day}`}
-          >
-            <header className="schedule-day-head">
-              <h2 id={`schedule-${day.day}`}>{day.day}</h2>
-              <span>
-                {day.date}
-                {index === todayIndex && (
-                  <span className="today-tag">Today</span>
-                )}
-              </span>
-            </header>
-            <ol className="timeline">
-              {day.items.map((item, itemIndex) => (
-                <ScheduleRow
-                  key={`${day.day}-${item.title}-${itemIndex}`}
-                  item={item}
-                />
-              ))}
-            </ol>
-          </section>
-        ))}
+        {eventSchedule.map((day, index) => {
+          const [month, date] = day.date.split(' ');
+          return (
+            <section
+              key={day.day}
+              className="schedule-day"
+              data-active={index === activeDay}
+              data-today={index === todayIndex || undefined}
+              aria-labelledby={`schedule-${day.day}`}
+            >
+              <header className="schedule-day-head">
+                <span className="schedule-day-num" aria-hidden="true">
+                  {date?.padStart(2, '0')}
+                </span>
+                <span className="schedule-day-name">
+                  <h2 id={`schedule-${day.day}`}>{day.day}</h2>
+                  <span>
+                    {month} {date}
+                    {index === todayIndex && (
+                      <span className="today-tag">Today</span>
+                    )}
+                  </span>
+                </span>
+              </header>
+              <ol className="timeline">
+                {day.items
+                  .filter((item) => !isNote(item))
+                  .map((item, itemIndex, items) => (
+                    <ScheduleRow
+                      key={`${day.day}-${item.title}-${itemIndex}`}
+                      item={item}
+                      previousGroups={previousRunOrder(items, itemIndex)}
+                    />
+                  ))}
+              </ol>
+            </section>
+          );
+        })}
       </div>
 
-      <p className="footnote">
-        Only clock times published on the official schedule are shown. Later
-        sessions follow the listed run order.
-      </p>
+      {notes.map((note) => (
+        <aside key={note.title} className="ops-note">
+          <Info aria-hidden="true" />
+          <p>
+            <strong>{note.title}</strong>
+            {note.note}
+          </p>
+        </aside>
+      ))}
     </div>
   );
 }
 
-function ScheduleRow({ item }: { item: ScheduleItem }) {
-  const kind =
-    item.note && !item.time && !item.duration ? 'note' : item.kind || 'track';
+/** The run order last shown above this item on the same day. */
+function previousRunOrder(items: ScheduleItem[], index: number) {
+  for (let i = index - 1; i >= 0; i--) {
+    const groups = items[i]?.groups;
+    if (groups) return groups;
+  }
+  return undefined;
+}
+
+function ScheduleRow({
+  item,
+  previousGroups,
+}: {
+  item: ScheduleItem;
+  previousGroups?: string[];
+}) {
+  const kind = item.kind || 'track';
   const Icon =
     kind === 'meeting'
       ? Users
@@ -103,24 +143,31 @@ function ScheduleRow({ item }: { item: ScheduleItem }) {
         ? Utensils
         : kind === 'social'
           ? PartyPopper
-          : kind === 'note'
-            ? Info
-            : null;
+          : null;
+  const feature = /feature/i.test(item.title);
+  const sameOrder =
+    item.groups &&
+    previousGroups &&
+    item.groups.join('|') === previousGroups.join('|');
 
   return (
-    <li className={`tl-item tl-${kind}`}>
-      <span className="tl-time">{item.time}</span>
+    <li className={`tl-item tl-${kind}`} data-feature={feature || undefined}>
+      <span className="tl-time" data-untimed={!item.time || undefined}>
+        {item.time || 'then'}
+      </span>
       <div className="tl-body">
         <p className="tl-title">
           {Icon && <Icon aria-hidden="true" />}
           {item.title}
-          {/feature/i.test(item.title) && (
-            <span className="tl-tag">Feature</span>
-          )}
         </p>
-        {item.duration && <p className="tl-duration">{item.duration}</p>}
-        {item.groups && <RunOrder groups={item.groups} />}
-        {item.note && <p className="tl-note">{item.note}</p>}
+        {item.duration && (
+          <p className="tl-duration">
+            {feature && <span className="tl-tag">Feature</span>}
+            {item.duration}
+            {sameOrder && <span> · same run order</span>}
+          </p>
+        )}
+        {item.groups && !sameOrder && <RunOrder groups={item.groups} />}
       </div>
     </li>
   );
