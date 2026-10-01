@@ -523,6 +523,13 @@
     white-space: nowrap;
   }
 
+  /* Small phones (375px) need the room for the status pill. */
+  @media (max-width: 419px) {
+    .brand-place {
+      display: none;
+    }
+  }
+
   .brand-event {
     overflow: hidden;
     color: var(--on-night-3);
@@ -629,7 +636,7 @@
     height: 34px;
     min-width: 0;
     max-width: 48%;
-    flex-shrink: 1;
+    flex-shrink: 0;
     align-items: center;
     gap: 8px;
     margin-left: auto;
@@ -5270,6 +5277,11 @@
 
 /* View transitions between hub views (outside layers so they apply to the
    pseudo-element tree). */
+/* Clicks made while a transition runs reach the new view underneath. */
+::view-transition {
+  pointer-events: none;
+}
+
 ::view-transition-old(root) {
   animation: vt-out 0.22s var(--ease-in-out) both;
 }

@@ -131,7 +131,8 @@ export default function Home() {
               <span className="brand-event">
                 <span className="brand-wide">CVAR live timing · Hallett</span>
                 <span className="brand-narrow">
-                  {currentEvent.shortName} · Hallett
+                  {currentEvent.shortName}
+                  <span className="brand-place"> · Hallett</span>
                 </span>
               </span>
             </span>
