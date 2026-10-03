@@ -4,5 +4,10 @@
   "cleanUrls": true,
   "buildCommand": "npm run build",
   "outputDirectory": "dist/client",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "functions": {
+    "api/result-sheet.ts": {
+      "includeFiles": "assets/fonts/archivo/*.ttf"
+    }
+  }
 }
