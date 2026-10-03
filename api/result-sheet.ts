@@ -1,7 +1,20 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import fontkit from '@pdf-lib/fontkit';
 import {
+  LineCapStyle,
   PDFDocument,
-  StandardFonts,
+  TextRenderingMode,
+  popGraphicsState,
+  pushGraphicsState,
   rgb,
+  setCharacterSpacing,
+  setLineWidth,
+  setStrokingColor,
+  setTextRenderingMode,
+  type Color,
   type PDFFont,
   type PDFImage,
   type PDFPage,
@@ -15,7 +28,11 @@ import {
   snapshotUsesRacePositions,
 } from './_race_positions.js';
 import { applyCvarRacePoints } from '../lib/race-points.js';
-import { deduplicateDriverEntries, raceGapAtLastLap } from '../lib/timing.js';
+import {
+  deduplicateDriverEntries,
+  formatSessionName as displaySessionName,
+  raceGapAtLastLap,
+} from '../lib/timing.js';
 import { CURRENT_EVENT_ID } from '../lib/events.js';
 
 type ResultCar = {
@@ -23,6 +40,7 @@ type ResultCar = {
   registrationNumber: string;
   number: string;
   driver: string;
+  car: string;
   groupName: string;
   className: string;
   position: number;
@@ -62,29 +80,99 @@ type ResultSnapshot = {
   raceTime: string;
   initializedAt: string;
   updatedAt: string;
+  groups: string[];
   cars: ResultCar[];
 };
 
-type Fonts = { regular: PDFFont; bold: PDFFont; italic: PDFFont };
-type LapBlock = { car: ResultCar; laps: LapPassing[]; continued?: boolean };
+type ResultOrder = 'best-lap' | 'position';
+type FontRole = keyof typeof FONT_FILES;
+type Fonts = Record<FontRole, PDFFont>;
+type Sheet = {
+  document: PDFDocument;
+  snapshot: ResultSnapshot;
+  fonts: Fonts;
+  logo: PDFImage | null;
+  title: string;
+  order: ResultOrder;
+  cars: ResultCar[];
+  passings: LapPassing[];
+};
+type Cursor = { page: PDFPage; y: number };
+type Align = 'left' | 'right' | 'center';
+type Column = {
+  key: string;
+  label: string[];
+  x: number;
+  width: number;
+  align: Align;
+};
 
 const EVENT_ID = CURRENT_EVENT_ID;
-const A4: [number, number] = [595.28, 841.89];
-const NAVY = rgb(0.027, 0.086, 0.125);
-const BLUE = rgb(0.075, 0.2, 0.275);
-const SKY = rgb(0.56, 0.79, 0.92);
-const YELLOW = rgb(0.96, 0.79, 0.27);
-const PAPER = rgb(0.975, 0.97, 0.94);
-const INK = rgb(0.06, 0.1, 0.12);
-const MUTED = rgb(0.36, 0.43, 0.47);
-const LINE = rgb(0.78, 0.8, 0.79);
-const ROW_SHADE = rgb(0.93, 0.93, 0.9);
-const PODIUM_GOLD = rgb(0.78, 0.58, 0.05);
-const PODIUM_GOLD_TINT = rgb(1, 0.95, 0.74);
-const PODIUM_SILVER = rgb(0.45, 0.51, 0.57);
-const PODIUM_SILVER_TINT = rgb(0.92, 0.94, 0.96);
-const PODIUM_BRONZE = rgb(0.58, 0.32, 0.15);
-const PODIUM_BRONZE_TINT = rgb(0.94, 0.84, 0.75);
+const TRACK_TIME_ZONE = 'America/Chicago';
+
+// US Letter, posted on notice boards at the track. Half-inch side margins
+// keep everything printable on A4 at actual size, which is 17pt narrower.
+const LETTER: [number, number] = [612, 792];
+const LEFT = 36;
+const RIGHT = 576;
+const WIDTH = RIGHT - LEFT;
+const BOTTOM = 64;
+const FIRST_HEADER_BOTTOM = 610;
+const RUNNING_HEADER_BOTTOM = 712;
+
+// Mostly black ink on white paper, with CVAR yellow as the only accent.
+const INK = rgb(0.043, 0.051, 0.055);
+const INK_2 = rgb(0.255, 0.278, 0.294);
+const INK_3 = rgb(0.337, 0.361, 0.376);
+const RULE = rgb(0.78, 0.79, 0.79);
+const SHADE = rgb(0.953, 0.941, 0.91);
+const WHITE = rgb(1, 1, 1);
+const YELLOW = rgb(0.961, 0.769, 0);
+const PODIUM_2 = rgb(0.71, 0.745, 0.769);
+const PODIUM_3 = rgb(0.878, 0.69, 0.533);
+const CHART_LINE = rgb(0.62, 0.63, 0.64);
+const FLAG_COLORS: Record<string, Color> = {
+  green: rgb(0.071, 0.533, 0.29),
+  yellow: YELLOW,
+  red: rgb(0.843, 0.149, 0.118),
+  blue: rgb(0.114, 0.373, 0.847),
+  white: WHITE,
+  black: INK,
+};
+
+// Static cuts of the variable font the site uses; see assets/fonts/archivo.
+const FONT_FILES = {
+  display: 'Archivo-ExpandedExtraBold.ttf',
+  label: 'Archivo-SemiExpandedBold.ttf',
+  text: 'Archivo-Regular.ttf',
+  textBold: 'Archivo-SemiBold.ttf',
+  data: 'Archivo-NarrowMedium.ttf',
+  dataBold: 'Archivo-NarrowExtraBold.ttf',
+} as const;
+// vercel.json ships the font folder with this function.
+const FONT_DIRECTORIES = [
+  fileURLToPath(new URL('../assets/fonts/archivo/', import.meta.url)),
+  path.join(process.cwd(), 'assets/fonts/archivo'),
+];
+const CAP_HEIGHT = 0.686;
+const FINISH_FLAGS = ['FINISH', 'FINISHED', 'CHECKERED', 'CHEQUERED'];
+const STOPPED_STATUSES = ['DNF', 'DNS', 'DQ'];
+
+const CLASSIFICATION_KICKER = 22;
+const TABLE_HEAD = 20;
+const MIN_ROW = 15.5;
+const MAX_ROW = 21;
+const BLOCK_GAP = 14;
+const SIGN_OFF_HEIGHT = 64;
+const SIGN_OFF_GAP = 24;
+const LAPS_PER_LINE = 10;
+const STATUS_STAMP = {
+  title: 'Provisional',
+  subtitle: 'Until reviewed by the stewards',
+  filled: false,
+};
+const LAP_LINE = 20;
+const LAP_CELLS_X = 172;
 
 export async function GET(request: Request) {
   if (!redisIsConfigured())
@@ -183,15 +271,21 @@ export async function createResultSheet(
   adjustments: Record<string, ResultAdjustment> = {},
 ) {
   const document = await PDFDocument.create();
-  document.setTitle(`${formatSessionName(snapshot.runName)} results`);
+  const title = sessionTitle(snapshot);
+  document.setTitle(
+    `${title} · Provisional results${snapshot.eventName ? ` · ${snapshot.eventName}` : ''}`,
+    { showInWindowTitleBar: true },
+  );
   document.setAuthor('Corinthian Vintage Auto Racing');
-  document.setSubject('Unofficial session result packet');
+  document.setSubject('Provisional session results, subject to steward review');
+  document.setKeywords(
+    [snapshot.eventName, snapshot.trackName, title, 'CVAR results'].filter(
+      Boolean,
+    ),
+  );
   document.setCreator('CVAR Live Timing');
-  const fonts: Fonts = {
-    regular: await document.embedFont(StandardFonts.Helvetica),
-    bold: await document.embedFont(StandardFonts.HelveticaBold),
-    italic: await document.embedFont(StandardFonts.HelveticaOblique),
-  };
+  document.setLanguage('en-US');
+  const fonts = await embedFonts(document);
   const logo = logoBytes
     ? await document.embedPng(logoBytes).catch(() => null)
     : null;
@@ -214,883 +308,1401 @@ export async function createResultSheet(
   const selectedPassings = passings.filter((passing) =>
     selectedKeys.has(passing.registrationKey || passing.registrationNumber),
   );
-  const classificationPages = chunk(cars, 34);
-  if (!classificationPages.length) classificationPages.push([]);
-  const penaltyPages = chunk(
-    cars.filter((car) => Boolean(car.resultAdjustment)),
-    18,
-  );
-  const lapPages = planLapBreakdownPages(cars, selectedPassings);
-  const chartPages = planLapChartPages(selectedPassings);
-  const totalPages =
-    classificationPages.length +
-    penaltyPages.length +
-    lapPages.length +
-    chartPages.length;
-  let pageNumber = 1;
+  const sheet: Sheet = {
+    document,
+    snapshot,
+    fonts,
+    logo,
+    title,
+    order: resultOrder,
+    cars,
+    passings: selectedPassings,
+  };
 
-  classificationPages.forEach((rows, index) => {
-    const page = document.addPage(A4);
-    drawClassificationPage({
-      page,
-      snapshot,
-      rows,
-      startPosition: index * 34,
-      pageNumber,
-      totalPages,
-      fonts,
-      logo,
-    });
-    pageNumber += 1;
-  });
-  penaltyPages.forEach((rows) => {
-    const page = document.addPage(A4);
-    drawPenaltyPage({
-      page,
-      snapshot,
-      rows,
-      pageNumber,
-      totalPages,
-      fonts,
-      logo,
-    });
-    pageNumber += 1;
-  });
-  lapPages.forEach((columns) => {
-    const page = document.addPage(A4);
-    drawLapBreakdownPage({
-      page,
-      snapshot,
-      columns,
-      pageNumber,
-      totalPages,
-      fonts,
-      logo,
-    });
-    pageNumber += 1;
-  });
-  chartPages.forEach((lapNumbers) => {
-    const page = document.addPage(A4);
-    drawLapChartPage({
-      page,
-      snapshot,
-      cars,
-      passings: selectedPassings,
-      lapNumbers,
-      pageNumber,
-      totalPages,
-      fonts,
-      logo,
-    });
-    pageNumber += 1;
-  });
+  drawClassification(sheet);
+  let section = 1;
+  let cursor: Cursor | null = null;
+  if (cars.some((car) => car.resultAdjustment)) {
+    section += 1;
+    // Where each car would have finished without any steward decisions.
+    const unadjusted = new Map(
+      rankCars(deduplicateDriverEntries(snapshot.cars), {}, resultOrder).map(
+        (car) => [carKey(car), car.position],
+      ),
+    );
+    cursor = drawPenalties(sheet, sectionNumber(section), unadjusted);
+  }
+  section += 1;
+  cursor = drawLapBreakdown(sheet, cursor, sectionNumber(section));
+  section += 1;
+  drawLapChart(sheet, cursor, sectionNumber(section));
+
+  const pages = document.getPages();
+  pages.forEach((page, index) =>
+    drawFooter(page, sheet, index + 1, pages.length),
+  );
   return document.save();
 }
 
-function drawClassificationPage({
-  page,
-  snapshot,
-  rows,
-  startPosition,
-  pageNumber,
-  totalPages,
-  fonts,
-  logo,
-}: {
-  page: PDFPage;
-  snapshot: ResultSnapshot;
-  rows: ResultCar[];
-  startPosition: number;
-  pageNumber: number;
-  totalPages: number;
-  fonts: Fonts;
-  logo: PDFImage | null;
-}) {
-  const { width } = page.getSize();
-  const contentTop = drawDocumentHeader({
-    page,
-    snapshot,
-    title: 'RESULT SHEET',
-    label:
-      resultOrderForSession(snapshot.runName, snapshot.sessionMode) ===
-      'position'
-        ? 'RACE POS / LAST-LAP GAPS'
-        : 'ADJUSTED BEST-LAP ORDER',
-    fonts,
-    logo,
-  });
-  const showPoints =
-    resultOrderForSession(snapshot.runName, snapshot.sessionMode) ===
-    'position';
-  const columns = showPoints
-    ? [
-        { label: 'Pos', x: 34, width: 22, align: 'right' as const },
-        { label: 'No.', x: 61, width: 26, align: 'left' as const },
-        { label: 'Driver', x: 92, width: 102, align: 'left' as const },
-        { label: 'Class', x: 199, width: 42, align: 'left' as const },
-        { label: 'Laps', x: 246, width: 27, align: 'right' as const },
-        { label: 'Total time', x: 278, width: 60, align: 'right' as const },
-        { label: 'Best Tm', x: 343, width: 54, align: 'right' as const },
-        { label: 'Points', x: 402, width: 38, align: 'right' as const },
-        { label: 'To prev.', x: 445, width: 52, align: 'right' as const },
-        { label: 'To lead', x: 502, width: 57, align: 'right' as const },
-      ]
-    : [
-        { label: 'Pos', x: 34, width: 22, align: 'right' as const },
-        { label: 'No.', x: 61, width: 30, align: 'left' as const },
-        { label: 'Driver', x: 96, width: 125, align: 'left' as const },
-        { label: 'Class', x: 226, width: 48, align: 'left' as const },
-        { label: 'Laps', x: 279, width: 28, align: 'right' as const },
-        { label: 'Total time', x: 312, width: 68, align: 'right' as const },
-        { label: 'Best Tm', x: 385, width: 58, align: 'right' as const },
-        { label: 'To prev.', x: 448, width: 53, align: 'right' as const },
-        { label: 'To lead', x: 506, width: 53, align: 'right' as const },
-      ];
-  const tableTop = contentTop - 17;
-  page.drawRectangle({
-    x: 28,
-    y: tableTop - 2,
-    width: width - 56,
-    height: 18,
-    color: BLUE,
-  });
-  columns.forEach((column) =>
-    drawCell(
-      page,
-      column.label,
-      column.x,
-      tableTop + 4,
-      column.width,
-      7,
-      fonts.bold,
-      rgb(1, 1, 1),
-      column.align,
-    ),
-  );
+/* Classification ---------------------------------------------------------- */
 
-  const rowHeight = 14.8;
-  rows.forEach((car, index) => {
-    const rowY = tableTop - 17 - index * rowHeight;
-    const position = startPosition + index + 1;
-    const podium = podiumStyle(position);
-    if (podium) {
-      page.drawRectangle({
-        x: 28,
-        y: rowY - 2.5,
-        width: width - 56,
-        height: rowHeight,
-        color: podium.tint,
-      });
-      page.drawRectangle({
-        x: 28,
-        y: rowY - 2.5,
-        width: 3.5,
-        height: rowHeight,
-        color: podium.accent,
-      });
-    } else if (index % 2 === 1)
-      page.drawRectangle({
-        x: 28,
-        y: rowY - 2.5,
-        width: width - 56,
-        height: rowHeight,
-        color: ROW_SHADE,
-      });
-    const cells = [
-      String(position),
-      car.number || '-',
-      car.driver || `Car ${car.number || position}`,
-      car.className || '-',
-      String(car.laps || 0),
-      car.totalTime || '-',
-      car.bestLap || '-',
-      ...(showPoints ? [formatPoints(car.points)] : []),
-      car.gapToPrevious || '-',
-      car.gapToLeader || '-',
-    ];
-    columns.forEach((column, cellIndex) => {
-      if (cellIndex === 0 && podium) {
-        drawPodiumMark(page, column.x, rowY - 0.4, podium.accent);
-        drawRight(
-          page,
-          cells[cellIndex],
-          column.x + column.width,
-          rowY + 1.5,
-          7.2,
-          fonts.bold,
-          podium.accent,
-        );
-        return;
-      }
-      drawCell(
-        page,
-        cells[cellIndex],
-        column.x,
-        rowY + 1.5,
-        column.width,
-        6.9,
-        cellIndex === 2 && podium
-          ? fonts.bold
-          : cellIndex === 6
-            ? fonts.bold
-            : fonts.regular,
-        cellIndex === 6 && car.bestLap
-          ? NAVY
-          : cellIndex === 2 && podium
-            ? podium.accent
-            : INK,
-        column.align,
-      );
+function drawClassification(sheet: Sheet) {
+  const { cars, fonts } = sheet;
+  const columns = classificationColumns(sheet.order, cars, fonts);
+  const summary = classificationSummary(sheet);
+  const finalHeight =
+    legendHeight(sheet) +
+    BLOCK_GAP +
+    summaryHeight(summary) +
+    SIGN_OFF_GAP +
+    SIGN_OFF_HEIGHT;
+  const plan = planClassification(cars.length, finalHeight);
+  const fastestKey = summary.fastest ? carKey(summary.fastest) : '';
+  let start = 0;
+
+  plan.pages.forEach((count, pageIndex) => {
+    const page = sheet.document.addPage(LETTER);
+    const last = pageIndex === plan.pages.length - 1;
+    let y =
+      pageIndex === 0
+        ? drawFirstHeader(page, sheet)
+        : drawRunningHeader(page, sheet);
+    drawKicker(page, fonts, {
+      y: y - 14,
+      index: '01',
+      label: pageIndex ? 'Classification, continued' : 'Classification',
+      note: `${cars.length} ${cars.length === 1 ? 'entry' : 'entries'} · ${
+        sheet.order === 'position'
+          ? 'classified by finishing position'
+          : 'classified by best lap time'
+      }`,
     });
-    page.drawLine({
-      start: { x: 28, y: rowY - 2.5 },
-      end: { x: width - 28, y: rowY - 2.5 },
-      thickness: 0.3,
-      color: LINE,
-    });
+    y -= CLASSIFICATION_KICKER;
+    y = drawTableHead(page, fonts, columns, y);
+    cars.slice(start, start + count).forEach((car, index) =>
+      drawClassificationRow(page, sheet, columns, car, {
+        top: y - index * plan.rowHeight,
+        height: plan.rowHeight,
+        shaded: (start + index) % 2 === 1,
+        fastest: carKey(car) === fastestKey,
+      }),
+    );
+    y -= count * plan.rowHeight;
+    rule(page, y, 0.6, INK);
+    start += count;
+
+    if (!cars.length)
+      drawLabel(page, 'No timed cars were recorded for this session.', {
+        x: LEFT,
+        y: y - 22,
+        size: 10,
+        font: fonts.text,
+        color: INK_2,
+      });
+    if (!last) {
+      drawLabel(page, 'Classification continues on the next page', {
+        x: RIGHT,
+        y: y - 12,
+        size: 6.5,
+        font: fonts.text,
+        color: INK_3,
+        align: 'right',
+      });
+      return;
+    }
+    y = drawLegend(page, sheet, y - 12);
+    drawSummary(page, sheet, summary, y - BLOCK_GAP);
+    drawSignOff(page, sheet);
   });
-  if (!rows.length)
-    page.drawText('No timed cars were recorded for this session.', {
-      x: 38,
-      y: tableTop - 50,
-      size: 10,
-      font: fonts.italic,
-      color: MUTED,
-    });
-  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
 }
 
-function drawPenaltyPage({
-  page,
-  snapshot,
-  rows,
-  pageNumber,
-  totalPages,
-  fonts,
-  logo,
-}: {
-  page: PDFPage;
-  snapshot: ResultSnapshot;
-  rows: ResultCar[];
-  pageNumber: number;
-  totalPages: number;
-  fonts: Fonts;
-  logo: PDFImage | null;
-}) {
-  const { width } = page.getSize();
-  const contentTop = drawDocumentHeader({
-    page,
-    snapshot,
-    title: 'PENALTIES & STEWARD DECISIONS',
-    label: 'OFFICIAL RESULT ADJUSTMENTS',
-    fonts,
-    logo,
-  });
-  const columns = [
-    { label: 'No.', x: 34, width: 34, align: 'left' as const },
-    { label: 'Driver', x: 72, width: 94, align: 'left' as const },
-    { label: 'Decision', x: 170, width: 112, align: 'left' as const },
-    { label: 'Original', x: 286, width: 55, align: 'right' as const },
-    { label: 'Final', x: 345, width: 58, align: 'right' as const },
-    { label: 'Steward note', x: 411, width: 156, align: 'left' as const },
+function planClassification(rows: number, finalHeight: number) {
+  const firstSpace =
+    FIRST_HEADER_BOTTOM - CLASSIFICATION_KICKER - TABLE_HEAD - BOTTOM;
+  const nextSpace =
+    RUNNING_HEADER_BOTTOM - CLASSIFICATION_KICKER - TABLE_HEAD - BOTTOM;
+  if (!rows) return { rowHeight: MAX_ROW, pages: [0] };
+  const singlePageRow = (firstSpace - finalHeight) / rows;
+  if (singlePageRow >= MIN_ROW)
+    return { rowHeight: Math.min(MAX_ROW, singlePageRow), pages: [rows] };
+
+  const pages: number[] = [];
+  let remaining = rows;
+  while (remaining > 0) {
+    const space = pages.length ? nextSpace : firstSpace;
+    const capacity = Math.floor(space / MIN_ROW);
+    const withSummary = Math.floor((space - finalHeight) / MIN_ROW);
+    if (remaining <= withSummary) {
+      pages.push(remaining);
+      remaining = 0;
+    } else if (remaining <= capacity) {
+      // The rows fit but the summary would not: carry a few rows over so
+      // the summary and sign-off never sit on a page of their own.
+      const carried = Math.min(remaining - 1, 3);
+      pages.push(remaining - carried);
+      remaining = carried;
+      if (!carried) pages.push(0);
+    } else {
+      pages.push(capacity);
+      remaining -= capacity;
+    }
+  }
+  return { rowHeight: MIN_ROW, pages };
+}
+
+function classificationColumns(
+  order: ResultOrder,
+  cars: ResultCar[],
+  fonts: Fonts,
+): Column[] {
+  const race = order === 'position';
+  const extra = race ? 0 : 12;
+  // Long class names ("ECR Big Bore") borrow width from the car column.
+  const carWidth = 86 + extra;
+  const classWidth = Math.min(
+    48 + carWidth - 62,
+    Math.max(
+      48,
+      ...cars.map(
+        (car) =>
+          measure(car.className.toUpperCase(), fonts.label, 5.6, 0.06) + 11,
+      ),
+    ),
+  );
+  const widths: Array<[string, string[], number, Align]> = [
+    ['pos', ['Pos'], 30, 'left'],
+    ['no', ['No.'], 28, 'center'],
+    ['driver', ['Driver'], 116 + extra, 'left'],
+    ['car', ['Car'], carWidth - (classWidth - 48), 'left'],
+    ['class', ['Class'], classWidth, 'left'],
+    ['laps', ['Laps'], 24, 'right'],
+    ['total', ['Total'], 50, 'right'],
+    ['best', ['Best lap'], 58, 'right'],
+    ['ahead', ['Gap to', 'ahead'], 38, 'right'],
+    ['leader', ['Gap to', race ? 'leader' : 'fastest'], 38, 'right'],
+    ...(race
+      ? [['points', ['Pts'], 24, 'right'] as [string, string[], number, Align]]
+      : []),
   ];
-  const tableTop = contentTop - 17;
-  page.drawRectangle({
-    x: 28,
-    y: tableTop - 2,
-    width: width - 56,
-    height: 18,
-    color: BLUE,
+  let x = LEFT;
+  return widths.map(([key, label, width, align]) => {
+    const column = { key, label, x, width, align };
+    x += width;
+    return column;
   });
-  columns.forEach((column) =>
-    drawCell(
-      page,
-      column.label,
-      column.x,
-      tableTop + 4,
-      column.width,
-      7,
-      fonts.bold,
-      rgb(1, 1, 1),
-      column.align,
-    ),
-  );
-
-  const rowHeight = 29;
-  rows.forEach((car, index) => {
-    const adjustment = car.resultAdjustment!;
-    const rowY = tableTop - 22 - index * rowHeight;
-    if (index % 2 === 1)
-      page.drawRectangle({
-        x: 28,
-        y: rowY - 11,
-        width: width - 56,
-        height: rowHeight,
-        color: ROW_SHADE,
-      });
-    const cells = [
-      car.number || '-',
-      car.driver || `Car ${car.number || '-'}`,
-      penaltyDecision(adjustment),
-      car.bestLap || '-',
-      ['DNF', 'DNS', 'DQ'].includes(adjustment.status)
-        ? adjustment.status
-        : car.adjustedBestLap || car.bestLap || '-',
-      adjustment.note || defaultAdjustmentNote(adjustment),
-    ];
-    columns.forEach((column, cellIndex) =>
-      drawCell(
-        page,
-        cells[cellIndex],
-        column.x,
-        rowY + 2,
-        column.width,
-        7.2,
-        cellIndex === 2 || cellIndex === 4 ? fonts.bold : fonts.regular,
-        cellIndex === 2 || cellIndex === 4 ? NAVY : INK,
-        column.align,
-      ),
-    );
-    page.drawText(
-      fitText(
-        safeText(
-          `Class ${car.className || '-'} | Final position P${car.position}`,
-        ),
-        fonts.regular,
-        6.1,
-        columns[1].width + columns[2].width + 4,
-      ),
-      {
-        x: columns[1].x,
-        y: rowY - 8,
-        size: 6.1,
-        font: fonts.regular,
-        color: MUTED,
-      },
-    );
-    page.drawLine({
-      start: { x: 28, y: rowY - 11 },
-      end: { x: width - 28, y: rowY - 11 },
-      thickness: 0.3,
-      color: LINE,
-    });
-  });
-
-  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
 }
 
-function drawLapBreakdownPage({
-  page,
-  snapshot,
-  columns,
-  pageNumber,
-  totalPages,
-  fonts,
-  logo,
-}: {
-  page: PDFPage;
-  snapshot: ResultSnapshot;
-  columns: LapBlock[][];
-  pageNumber: number;
-  totalPages: number;
-  fonts: Fonts;
-  logo: PDFImage | null;
-}) {
-  const contentTop = drawDocumentHeader({
-    page,
-    snapshot,
-    title: 'LAP BREAKDOWN',
-    label: 'INDIVIDUAL LAP TIMES',
-    fonts,
-    logo,
+function drawClassificationRow(
+  page: PDFPage,
+  sheet: Sheet,
+  columns: Column[],
+  car: ResultCar,
+  row: { top: number; height: number; shaded: boolean; fastest: boolean },
+) {
+  const { fonts } = sheet;
+  const middle = row.top - row.height / 2;
+  const size = Math.min(9, 8.2 + (row.height - MIN_ROW) * 0.12);
+  const baseline = middle - CAP_HEIGHT * size * 0.5;
+  if (row.shaded)
+    page.drawRectangle({
+      x: LEFT,
+      y: row.top - row.height,
+      width: WIDTH,
+      height: row.height,
+      color: SHADE,
+    });
+  const column = (key: string) => columns.find((item) => item.key === key)!;
+
+  drawPosition(page, fonts, car.position, column('pos').x + 3, middle, {
+    size: Math.min(13, row.height - 4),
   });
-  const columnWidth = 171;
-  const columnXs = [31, 211, 391];
-  const lineHeight = 10.5;
-  columnXs.slice(1).forEach((x) =>
+  const number = column('no');
+  drawCarNumber(page, fonts, car.number, number.x + number.width / 2, middle, {
+    height: Math.min(13.5, row.height - 3.5),
+  });
+
+  const driver = column('driver');
+  const tag = adjustmentTag(car.resultAdjustment);
+  const tagWidth = tag ? measureTag(fonts, tag.label) : 0;
+  const nameWidth = drawLabel(
+    page,
+    car.driver || `Car ${car.number || car.position}`,
+    {
+      x: driver.x + 3,
+      y: baseline,
+      size,
+      font: fonts.textBold,
+      maxWidth: driver.width - 6 - (tag ? tagWidth + 4 : 0),
+      minSize: 6.6,
+    },
+  );
+  if (tag)
+    drawTag(page, fonts, tag.label, driver.x + 3 + nameWidth + 4, middle, {
+      filled: tag.filled,
+    });
+
+  const carColumn = column('car');
+  cellText(page, car.car, carColumn, baseline, {
+    size: size - 0.9,
+    font: fonts.text,
+    color: INK_2,
+    minSize: 6,
+  });
+
+  const classColumn = column('class');
+  if (car.className)
+    drawClassTag(page, fonts, car.className, classColumn.x + 3, middle, {
+      maxWidth: classColumn.width - 6,
+    });
+  else cellText(page, '', classColumn, baseline, { size, font: fonts.data });
+
+  cellText(page, String(car.laps || 0), column('laps'), baseline, {
+    size,
+    font: fonts.data,
+  });
+  cellText(page, car.totalTime, column('total'), baseline, {
+    size,
+    font: fonts.data,
+  });
+
+  const best = column('best');
+  if (car.bestLap) {
+    const right = best.x + best.width - 3;
+    const lapLabel = car.bestLapNumber ? `L${car.bestLapNumber}` : '';
+    const lapWidth = lapLabel
+      ? drawLabel(page, lapLabel, {
+          x: right,
+          y: baseline,
+          size: size - 2.3,
+          font: fonts.data,
+          color: INK_3,
+          align: 'right',
+        })
+      : 0;
+    const timeRight = right - (lapWidth ? lapWidth + 3 : 0);
+    const timeWidth = drawLabel(page, car.bestLap, {
+      x: timeRight,
+      y: baseline,
+      size,
+      font: fonts.dataBold,
+      align: 'right',
+      maxWidth: best.width - 8 - lapWidth,
+      minSize: 6.5,
+    });
+    if (row.fastest)
+      drawFastestBox(page, timeRight - timeWidth, baseline, timeWidth, size);
+  } else cellText(page, '', best, baseline, { size, font: fonts.data });
+
+  cellText(page, car.gapToPrevious || '', column('ahead'), baseline, {
+    size: size - 0.3,
+    font: fonts.data,
+    color: INK_2,
+  });
+  cellText(page, car.gapToLeader || '', column('leader'), baseline, {
+    size: size - 0.3,
+    font: fonts.data,
+    color: INK_2,
+  });
+  if (sheet.order === 'position')
+    cellText(page, formatPoints(car.points), column('points'), baseline, {
+      size: size + 0.3,
+      font: fonts.dataBold,
+    });
+}
+
+type LegendItem = {
+  width: number;
+  draw: (page: PDFPage, x: number, baseline: number) => void;
+};
+
+/** Key to the marks used in the table, wrapped to the page width. */
+function legendLines(sheet: Sheet) {
+  const { fonts, cars } = sheet;
+  const labelSize = 6.5;
+  const item = (
+    markWidth: number,
+    mark: (page: PDFPage, x: number, middle: number, baseline: number) => void,
+    label: string,
+  ): LegendItem => ({
+    width: markWidth + 4 + measure(label, fonts.text, labelSize),
+    draw: (page, x, baseline) => {
+      mark(page, x, baseline + CAP_HEIGHT * labelSize * 0.5, baseline);
+      drawLabel(page, label, {
+        x: x + markWidth + 4,
+        y: baseline,
+        size: labelSize,
+        font: fonts.text,
+        color: INK_2,
+      });
+    },
+  });
+  const items: LegendItem[] = [];
+  if (cars.length)
+    items.push(
+      item(
+        19,
+        (page, x, middle) =>
+          drawPosition(page, fonts, 1, x, middle, { size: 9 }),
+        'Top three',
+      ),
+    );
+  if (cars.some((car) => car.bestLap)) {
+    const sample = '1:23.456';
+    const width = measure(sample, fonts.dataBold, 6.8);
+    items.push(
+      item(
+        width + 4,
+        (page, x, _middle, baseline) => {
+          drawLabel(page, sample, {
+            x: x + 2,
+            y: baseline,
+            size: 6.8,
+            font: fonts.dataBold,
+          });
+          drawFastestBox(page, x + 2, baseline, width, 6.8);
+        },
+        'Fastest lap of the session',
+      ),
+      item(
+        measure('L7', fonts.data, 6),
+        (page, x, _middle, baseline) =>
+          drawLabel(page, 'L7', {
+            x,
+            y: baseline,
+            size: 6,
+            font: fonts.data,
+            color: INK_3,
+          }),
+        'Lap the best time was set on',
+      ),
+    );
+  }
+  const used = new Set(
+    cars.flatMap((car) => {
+      const tag = adjustmentTag(car.resultAdjustment);
+      return tag ? [tag.label.split(' ')[0]] : [];
+    }),
+  );
+  [
+    ['PEN', 'Time penalty'],
+    ['DNF', 'Did not finish'],
+    ['DNS', 'Did not start'],
+    ['DQ', 'Disqualified'],
+  ].forEach(([code, label]) => {
+    if (used.has(code))
+      items.push(
+        item(
+          measureTag(fonts, code),
+          (page, x, middle) =>
+            drawTag(page, fonts, code, x, middle, { filled: code !== 'PEN' }),
+          label,
+        ),
+      );
+  });
+  const lines: LegendItem[][] = [];
+  let width = 0;
+  items.forEach((entry) => {
+    if (!lines.length || width + entry.width > WIDTH) {
+      lines.push([]);
+      width = 0;
+    }
+    lines.at(-1)!.push(entry);
+    width += entry.width + 14;
+  });
+  return lines;
+}
+
+function legendHeight(sheet: Sheet) {
+  return 10 + legendLines(sheet).length * 11;
+}
+
+function drawLegend(page: PDFPage, sheet: Sheet, y: number) {
+  legendLines(sheet).forEach((line, index) => {
+    let x = LEFT;
+    line.forEach((entry) => {
+      entry.draw(page, x, y - 9 - index * 11);
+      x += entry.width + 14;
+    });
+  });
+  return y - legendHeight(sheet);
+}
+
+type Summary = ReturnType<typeof classificationSummary>;
+
+function classificationSummary(sheet: Sheet) {
+  const { cars } = sheet;
+  // Best-lap sessions are ranked on the adjusted lap, so the fastest lap is
+  // too; in races a time penalty applies to race time, not to the lap.
+  const lapFor = (car: ResultCar) =>
+    sheet.order === 'best-lap'
+      ? adjustedLapMilliseconds(car)
+      : lapTimeToMilliseconds(car.bestLap);
+  const fastest = cars.reduce<ResultCar | null>((best, car) => {
+    if (['DQ', 'DNS'].includes(car.resultAdjustment?.status || '')) return best;
+    const time = lapFor(car);
+    if (!Number.isFinite(time)) return best;
+    return !best || time < lapFor(best) ? car : best;
+  }, null);
+  const winners = new Map<string, ResultCar>();
+  cars.forEach((car) => {
+    const className = car.className.trim();
+    if (!className || winners.has(className) || !classified(car)) return;
+    winners.set(className, car);
+  });
+  return {
+    fastest,
+    starters: cars.filter(started).length,
+    entries: cars.length,
+    winners: [...winners.entries()],
+  };
+}
+
+function summaryHeight(summary: Summary) {
+  return Math.max(58, 26 + Math.ceil(summary.winners.length / 2) * 10.5);
+}
+
+function drawSummary(
+  page: PDFPage,
+  sheet: Sheet,
+  summary: Summary,
+  top: number,
+) {
+  const { fonts } = sheet;
+  const height = summaryHeight(summary);
+  rule(page, top, 1.2, INK);
+  [186, 296].forEach((x) =>
     page.drawLine({
-      start: { x: x - 8, y: contentTop + 1 },
-      end: { x: x - 8, y: 103 },
-      thickness: 0.45,
-      color: LINE,
+      start: { x, y: top - 6 },
+      end: { x, y: top - height + 2 },
+      thickness: 0.4,
+      color: RULE,
     }),
   );
 
-  columns.forEach((blocks, columnIndex) => {
-    const x = columnXs[columnIndex];
-    let y = contentTop - 11;
-    page.drawText('Lap', { x, y, size: 6.2, font: fonts.bold, color: MUTED });
-    page.drawText('Lap Tm', {
-      x: x + 30,
-      y,
-      size: 6.2,
-      font: fonts.bold,
-      color: MUTED,
+  drawEyebrow(page, fonts, 'Fastest lap', LEFT, top - 12);
+  if (summary.fastest) {
+    const car = summary.fastest;
+    drawLabel(page, car.bestLap, {
+      x: LEFT,
+      y: top - 33,
+      size: 19,
+      font: fonts.dataBold,
     });
-    page.drawText('Diff', {
-      x: x + 82,
-      y,
-      size: 6.2,
-      font: fonts.bold,
-      color: MUTED,
+    drawLabel(page, `#${car.number || '–'} ${car.driver}`, {
+      x: LEFT,
+      y: top - 44,
+      size: 7.6,
+      font: fonts.textBold,
+      maxWidth: 140,
+      minSize: 6.4,
     });
-    page.drawText('Time of Day', {
-      x: x + 115,
-      y,
-      size: 6.2,
-      font: fonts.bold,
-      color: MUTED,
-    });
-    y -= 15;
-    blocks.forEach((block) => {
-      const title = `(${block.car.number || '-'}) ${block.car.driver || 'Unknown driver'}${block.continued ? ' (cont.)' : ''}`;
-      page.drawText(fitText(safeText(title), fonts.bold, 6.6, columnWidth), {
-        x,
-        y,
-        size: 6.6,
-        font: fonts.bold,
-        color: NAVY,
-      });
-      page.drawLine({
-        start: { x, y: y - 2.5 },
-        end: { x: x + columnWidth - 4, y: y - 2.5 },
-        thickness: 0.7,
-        color: NAVY,
-      });
-      y -= lineHeight;
-      const best = Math.min(
-        ...block.laps
-          .map((lap) => lap.lapTimeMs ?? lapTimeToMilliseconds(lap.lapTime))
-          .filter(Number.isFinite),
-      );
-      block.laps.forEach((lap) => {
-        const lapMs = lap.lapTimeMs ?? lapTimeToMilliseconds(lap.lapTime);
-        const isBest = Number.isFinite(best) && lapMs === best;
-        const diff =
-          Number.isFinite(best) && Number.isFinite(lapMs) && lapMs > best
-            ? `+${((lapMs - best) / 1000).toFixed(3)}`
-            : '';
-        drawRight(
-          page,
-          String(lap.lapNumber || '-'),
-          x + 22,
-          y,
-          6.25,
-          fonts.regular,
-          INK,
-        );
-        drawRight(
-          page,
-          lap.lapTime || '-',
-          x + 76,
-          y,
-          6.25,
-          isBest ? fonts.bold : fonts.regular,
-          INK,
-        );
-        drawRight(page, diff, x + 110, y, 6.1, fonts.regular, MUTED);
-        drawRight(
-          page,
-          formatTimeOfDay(lap.recordedAt),
-          x + columnWidth - 4,
-          y,
-          6.1,
-          fonts.regular,
-          INK,
-        );
-        y -= lineHeight;
-      });
-      y -= 5;
-    });
-  });
-  if (columns.every((column) => column.length === 0))
-    page.drawText('No lap passings were recorded for this session.', {
-      x: 38,
-      y: contentTop - 55,
-      size: 10,
-      font: fonts.italic,
-      color: MUTED,
-    });
-  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
-}
-
-function drawLapChartPage({
-  page,
-  snapshot,
-  cars,
-  passings,
-  lapNumbers,
-  pageNumber,
-  totalPages,
-  fonts,
-  logo,
-}: {
-  page: PDFPage;
-  snapshot: ResultSnapshot;
-  cars: ResultCar[];
-  passings: LapPassing[];
-  lapNumbers: number[];
-  pageNumber: number;
-  totalPages: number;
-  fonts: Fonts;
-  logo: PDFImage | null;
-}) {
-  const contentTop = drawDocumentHeader({
-    page,
-    snapshot,
-    title: 'LAP CHART',
-    label: 'POSITION BY LAP',
-    fonts,
-    logo,
-  });
-  const { width } = page.getSize();
-  const firstOrder = initialPassingOrder(cars, passings);
-  const chartStart = 218;
-  const includeGrid = lapNumbers[0] === 1;
-  const chartColumns = includeGrid ? [0, ...lapNumbers] : lapNumbers;
-  const cellWidth = Math.min(
-    31,
-    (width - 32 - chartStart) / Math.max(1, chartColumns.length),
-  );
-  const rowCount = passings.length
-    ? Math.max(cars.length, firstOrder.length)
-    : 0;
-  const rowHeight = Math.min(13.5, 435 / Math.max(1, rowCount));
-  const fontSize = Math.max(5.5, Math.min(6.8, rowHeight - 4.8));
-  page.drawText('Competitors', {
-    x: 34,
-    y: contentTop - 11,
-    size: 6.5,
-    font: fonts.bold,
-    color: MUTED,
-  });
-  page.drawText('Pos', {
-    x: 190,
-    y: contentTop - 11,
-    size: 6.5,
-    font: fonts.bold,
-    color: MUTED,
-  });
-  page.drawText('Laps', {
-    x: chartStart,
-    y: contentTop - 11,
-    size: 6.5,
-    font: fonts.bold,
-    color: MUTED,
-  });
-  const headerY = contentTop - 28;
-  chartColumns.forEach((lap, index) =>
-    drawCell(
-      page,
-      String(lap),
-      chartStart + index * cellWidth,
-      headerY,
-      cellWidth - 2,
-      6.3,
-      fonts.bold,
-      NAVY,
-      'center',
-    ),
-  );
-  const orderByLap = new Map(
-    lapNumbers.map((lap) => [lap, orderAtLap(passings, lap)]),
-  );
-  const rowYStart = headerY - 19;
-  for (let row = 0; row < rowCount; row += 1) {
-    const y = rowYStart - row * rowHeight;
-    if (row % 2 === 1)
-      page.drawRectangle({
-        x: 28,
-        y: y - 3,
-        width: width - 56,
-        height: rowHeight,
-        color: ROW_SHADE,
-      });
-    const entrant = firstOrder[row] || cars[row];
-    const entrantLabel = entrant
-      ? `${entrant.driver || 'Unknown'} (${entrant.number || '-'})`
-      : '-';
-    page.drawText(
-      fitText(safeText(entrantLabel), fonts.regular, fontSize, 150),
-      { x: 34, y, size: fontSize, font: fonts.regular, color: INK },
-    );
-    drawRight(page, String(row + 1), 204, y, fontSize, fonts.bold, NAVY);
-    chartColumns.forEach((lap, index) => {
-      const orderedCar =
-        lap === 0 ? firstOrder[row] : orderByLap.get(lap)?.[row];
-      drawCell(
-        page,
-        orderedCar?.number || '',
-        chartStart + index * cellWidth,
-        y,
-        cellWidth - 2,
-        fontSize,
-        fonts.bold,
-        INK,
-        'center',
-      );
-    });
-    page.drawLine({
-      start: { x: 28, y: y - 3 },
-      end: { x: width - 28, y: y - 3 },
-      thickness: 0.25,
-      color: LINE,
-    });
-  }
-  if (!passings.length)
-    page.drawText('No lap positions were recorded for this session.', {
-      x: 38,
-      y: contentTop - 55,
-      size: 10,
-      font: fonts.italic,
-      color: MUTED,
-    });
-  drawFooter(page, snapshot, pageNumber, totalPages, fonts);
-}
-
-function drawDocumentHeader({
-  page,
-  snapshot,
-  title,
-  label,
-  fonts,
-  logo,
-}: {
-  page: PDFPage;
-  snapshot: ResultSnapshot;
-  title: string;
-  label: string;
-  fonts: Fonts;
-  logo: PDFImage | null;
-}) {
-  const { width, height } = page.getSize();
-  page.drawRectangle({ x: 0, y: 0, width, height, color: PAPER });
-  page.drawRectangle({
-    x: 0,
-    y: height - 12,
-    width,
-    height: 12,
-    color: YELLOW,
-  });
-  if (logo) {
-    const fitted = logo.scale(0.27);
-    page.drawImage(logo, {
-      x: 28,
-      y: height - 80,
-      width: fitted.width,
-      height: fitted.height,
+    drawLabel(page, car.bestLapNumber ? `on lap ${car.bestLapNumber}` : '', {
+      x: LEFT,
+      y: top - 53.5,
+      size: 7,
+      font: fonts.text,
+      color: INK_2,
     });
   } else
-    page.drawText('CVAR', {
-      x: 30,
-      y: height - 58,
-      size: 22,
-      font: fonts.bold,
-      color: NAVY,
+    drawLabel(page, 'No timed laps', {
+      x: LEFT,
+      y: top - 30,
+      size: 8,
+      font: fonts.text,
+      color: INK_2,
     });
-  drawRight(
+
+  drawEyebrow(page, fonts, 'Starters', 196, top - 12);
+  const startersWidth = drawLabel(page, String(summary.starters), {
+    x: 196,
+    y: top - 39,
+    size: 28,
+    font: fonts.display,
+    outline: 0.85,
+  });
+  drawLabel(page, `of ${summary.entries}`, {
+    x: 196 + startersWidth + 5,
+    y: top - 30,
+    size: 7.6,
+    font: fonts.textBold,
+  });
+  drawLabel(page, 'entered', {
+    x: 196 + startersWidth + 5,
+    y: top - 39,
+    size: 7.6,
+    font: fonts.text,
+    color: INK_2,
+  });
+
+  drawEyebrow(
     page,
-    'OFFICIAL EVENT TIMING',
-    width - 28,
-    height - 39,
-    7,
-    fonts.bold,
-    NAVY,
+    fonts,
+    sheet.order === 'position' ? 'Class winners' : 'Fastest in class',
+    306,
+    top - 12,
   );
-  drawRight(page, title, width - 28, height - 59, 17, fonts.bold, NAVY);
-  drawRight(page, label, width - 28, height - 74, 7.2, fonts.bold, MUTED);
-  const headerY = height - 169;
-  page.drawRectangle({
-    x: 28,
-    y: headerY,
-    width: width - 56,
-    height: 76,
-    color: NAVY,
+  if (!summary.winners.length)
+    drawLabel(page, 'No classified finishers', {
+      x: 306,
+      y: top - 26,
+      size: 7.5,
+      font: fonts.text,
+      color: INK_2,
+    });
+  const perColumn = Math.ceil(summary.winners.length / 2);
+  summary.winners.forEach(([className, car], index) => {
+    const x = 306 + Math.floor(index / perColumn) * 136;
+    const baseline = top - 26 - (index % perColumn) * 10.5;
+    const middle = baseline + CAP_HEIGHT * 3.6;
+    const tagWidth = drawClassTag(page, fonts, className, x, middle, {
+      maxWidth: 64,
+      size: 5.2,
+    });
+    drawLabel(page, `#${car.number || '–'} ${car.driver}`, {
+      x: x + tagWidth + 4,
+      y: baseline,
+      size: 7.2,
+      font: fonts.textBold,
+      maxWidth: 128 - tagWidth - 4,
+      minSize: 6,
+    });
   });
-  page.drawRectangle({
-    x: 28,
-    y: headerY,
-    width: 5,
-    height: 76,
-    color: YELLOW,
-  });
-  page.drawText(safeText(snapshot.eventName || 'CVAR Race Weekend'), {
-    x: 45,
-    y: headerY + 52,
-    size: 8,
-    font: fonts.bold,
-    color: SKY,
-  });
-  page.drawText(
-    fitText(formatSessionName(snapshot.runName), fonts.bold, 17, 330),
-    { x: 45, y: headerY + 29, size: 17, font: fonts.bold, color: rgb(1, 1, 1) },
-  );
-  page.drawText(sessionDescription(snapshot), {
-    x: 45,
-    y: headerY + 12,
-    size: 7.4,
-    font: fonts.italic,
-    color: rgb(0.78, 0.84, 0.87),
-  });
-  drawRight(
-    page,
-    fitText(trackLine(snapshot), fonts.regular, 8.2, 178),
-    width - 43,
-    headerY + 46,
-    8.2,
-    fonts.regular,
-    rgb(1, 1, 1),
-  );
-  drawRight(
-    page,
-    formatDate(snapshot.initializedAt || snapshot.updatedAt),
-    width - 43,
-    headerY + 27,
-    7.7,
-    fonts.regular,
-    rgb(0.78, 0.84, 0.87),
-  );
-  drawCheckers(page, width - 91, headerY + 6);
-  return headerY;
 }
 
-function drawFooter(
-  page: PDFPage,
-  snapshot: ResultSnapshot,
-  pageNumber: number,
-  totalPages: number,
-  fonts: Fonts,
+function drawSignOff(page: PDFPage, sheet: Sheet) {
+  const { fonts } = sheet;
+  const y = BOTTOM;
+  page.drawRectangle({
+    x: LEFT,
+    y,
+    width: WIDTH,
+    height: SIGN_OFF_HEIGHT,
+    borderColor: INK,
+    borderWidth: 1,
+  });
+  drawStamp(page, fonts, LEFT + 10, y + 12, 172, 40, {
+    title: 'Provisional',
+    subtitle: 'Results',
+    filled: true,
+  });
+  wrapText(
+    `These results are provisional until a steward has reviewed them and initialled this sheet. ${
+      sheet.cars.some((car) => car.resultAdjustment)
+        ? 'Steward decisions are listed under Penalties.'
+        : 'No steward decisions have been recorded.'
+    }`,
+    fonts.text,
+    7.2,
+    150,
+  ).forEach((line, index) =>
+    drawLabel(page, line, {
+      x: 230,
+      y: y + 42 - index * 9.6,
+      size: 7.2,
+      font: fonts.text,
+      color: INK_2,
+    }),
+  );
+  const fields = [
+    { label: 'Posted at', y: y + 38 },
+    { label: "Steward's initials", y: y + 14 },
+  ];
+  const lineStart =
+    396 +
+    Math.max(
+      ...fields.map((field) =>
+        measure(field.label.toUpperCase(), fonts.label, 6.2, 0.12),
+      ),
+    ) +
+    10;
+  fields.forEach((field) => {
+    drawEyebrow(page, fonts, field.label, 396, field.y);
+    page.drawLine({
+      start: { x: lineStart, y: field.y - 2 },
+      end: { x: RIGHT - 10, y: field.y - 2 },
+      thickness: 0.8,
+      color: INK,
+    });
+  });
+}
+
+/* Penalties --------------------------------------------------------------- */
+
+function drawPenalties(
+  sheet: Sheet,
+  index: string,
+  unadjusted: Map<string, number>,
 ) {
-  const { width } = page.getSize();
-  const noteY = 64;
-  page.drawLine({
-    start: { x: 28, y: noteY + 22 },
-    end: { x: width - 28, y: noteY + 22 },
-    thickness: 1.1,
-    color: NAVY,
+  const { fonts } = sheet;
+  const rows = sheet.cars.filter((car) => Boolean(car.resultAdjustment));
+  const columns: Column[] = [
+    { key: 'no', label: ['No.'], x: LEFT, width: 30, align: 'center' },
+    {
+      key: 'driver',
+      label: ['Driver'],
+      x: LEFT + 30,
+      width: 112,
+      align: 'left',
+    },
+    {
+      key: 'decision',
+      label: ['Decision'],
+      x: LEFT + 142,
+      width: 80,
+      align: 'left',
+    },
+    {
+      key: 'penalty',
+      label: ['Penalty'],
+      x: LEFT + 222,
+      width: 48,
+      align: 'right',
+    },
+    {
+      key: 'position',
+      label: ['Position', 'before → after'],
+      x: LEFT + 276,
+      width: 66,
+      align: 'left',
+    },
+    {
+      key: 'best',
+      label: ['Best lap', 'before → after'],
+      x: LEFT + 342,
+      width: 62,
+      align: 'left',
+    },
+    {
+      key: 'note',
+      label: ["Steward's note"],
+      x: LEFT + 404,
+      width: 136,
+      align: 'left',
+    },
+  ];
+  const note = columns[6];
+  let cursor = newPage(sheet);
+  const heading = {
+    index,
+    title: 'Penalties',
+    note: 'Steward decisions applied to this classification, with each car’s position before and after them.',
+  };
+  cursor.y = drawSectionHeading(cursor.page, fonts, cursor.y, heading);
+  cursor.y = drawTableHead(cursor.page, fonts, columns, cursor.y);
+
+  rows.forEach((car, rowIndex) => {
+    const adjustment = car.resultAdjustment!;
+    const noteLines = wrapText(
+      adjustment.note || defaultAdjustmentNote(adjustment),
+      fonts.text,
+      7.2,
+      note.width - 6,
+    );
+    const decisions = decisionLines(adjustment);
+    const driver = columns[1];
+    const names = wrapLines(
+      car.driver || `Car ${car.number || '–'}`,
+      fonts.textBold,
+      8.4,
+      driver.width - 6,
+      2,
+    );
+    const details = wrapLines(
+      [car.className && `Class ${car.className}`, car.car]
+        .filter(Boolean)
+        .join(' · '),
+      fonts.text,
+      6.6,
+      driver.width - 6,
+      2,
+    );
+    const height = Math.max(
+      30,
+      10 +
+        Math.max(
+          noteLines.length,
+          decisions.length * 1.25,
+          names.length + details.length,
+        ) *
+          9.4,
+    );
+    if (cursor.y - height < BOTTOM) {
+      cursor = newPage(sheet);
+      cursor.y = drawSectionHeading(cursor.page, fonts, cursor.y, {
+        ...heading,
+        continued: true,
+      });
+      cursor.y = drawTableHead(cursor.page, fonts, columns, cursor.y);
+    }
+    const { page } = cursor;
+    const top = cursor.y;
+    const baseline = top - 12;
+    if (rowIndex % 2 === 1)
+      page.drawRectangle({
+        x: LEFT,
+        y: top - height,
+        width: WIDTH,
+        height,
+        color: SHADE,
+      });
+    drawCarNumber(page, fonts, car.number, LEFT + 15, baseline + 3, {
+      height: 14,
+    });
+    names.forEach((line, lineIndex) =>
+      drawLabel(page, line, {
+        x: driver.x + 3,
+        y: baseline - lineIndex * 9.4,
+        size: 8.4,
+        font: fonts.textBold,
+        maxWidth: driver.width - 6,
+      }),
+    );
+    details.forEach((line, lineIndex) =>
+      drawLabel(page, line, {
+        x: driver.x + 3,
+        y: baseline - (names.length + lineIndex) * 9.4,
+        size: 6.6,
+        font: fonts.text,
+        color: INK_3,
+        maxWidth: driver.width - 6,
+      }),
+    );
+
+    const decision = columns[2];
+    decisions.forEach((line, lineIndex) => {
+      const lineBaseline = baseline - lineIndex * 11.5;
+      const tagWidth = drawTag(
+        page,
+        fonts,
+        line.tag,
+        decision.x + 3,
+        lineBaseline + CAP_HEIGHT * 4,
+        { filled: line.filled },
+      );
+      drawLabel(page, line.label, {
+        x: decision.x + 3 + tagWidth + 4,
+        y: lineBaseline,
+        size: 7.2,
+        font: fonts.text,
+        maxWidth: decision.width - tagWidth - 10,
+        minSize: 6,
+      });
+    });
+
+    cellText(
+      page,
+      adjustment.penaltySeconds > 0
+        ? `+${adjustment.penaltySeconds.toFixed(3)} s`
+        : '',
+      columns[3],
+      baseline,
+      { size: 8.4, font: fonts.dataBold },
+    );
+
+    const before = unadjusted.get(carKey(car));
+    const position = columns[4];
+    drawLabel(
+      page,
+      before && before !== car.position
+        ? `P${before} → P${car.position}`
+        : `P${car.position}`,
+      { x: position.x + 3, y: baseline, size: 8.4, font: fonts.dataBold },
+    );
+    drawLabel(
+      page,
+      adjustment.positionOverride
+        ? 'set by steward'
+        : before && before !== car.position
+          ? `${before < car.position ? 'down' : 'up'} ${Math.abs(before - car.position)}`
+          : 'no change',
+      {
+        x: position.x + 3,
+        y: baseline - 9.4,
+        size: 6.6,
+        font: fonts.text,
+        color: INK_3,
+      },
+    );
+
+    const best = columns[5];
+    drawLabel(page, car.bestLap || '–', {
+      x: best.x + 3,
+      y: baseline,
+      size: 8.4,
+      font: fonts.data,
+      color: car.bestLap ? INK : INK_3,
+    });
+    const after = STOPPED_STATUSES.includes(adjustment.status)
+      ? adjustment.status
+      : car.adjustedBestLap;
+    if (after)
+      drawLabel(page, `→ ${after}`, {
+        x: best.x + 3,
+        y: baseline - 9.4,
+        size: 8.4,
+        font: fonts.dataBold,
+      });
+
+    noteLines.forEach((line, lineIndex) =>
+      drawLabel(page, line, {
+        x: note.x + 3,
+        y: baseline - lineIndex * 9.4,
+        size: 7.2,
+        font: fonts.text,
+        color: INK_2,
+      }),
+    );
+    cursor.y -= height;
+    rule(page, cursor.y, 0.3, RULE);
   });
-  page.drawText('UNOFFICIAL RESULTS', {
-    x: 28,
-    y: noteY + 5,
-    size: 7.5,
-    font: fonts.bold,
-    color: NAVY,
-  });
-  page.drawText('Results are final only after steward review.', {
-    x: 126,
-    y: noteY + 5,
-    size: 7.5,
-    font: fonts.regular,
-    color: MUTED,
-  });
-  drawRight(
-    page,
-    `Page ${pageNumber} of ${totalPages}`,
-    width - 28,
-    noteY + 5,
-    7.5,
-    fonts.bold,
-    NAVY,
-  );
-  page.drawText('Corinthian Vintage Auto Racing', {
-    x: 28,
-    y: 32,
-    size: 7,
-    font: fonts.regular,
-    color: MUTED,
-  });
-  drawRight(
-    page,
-    `Generated ${formatDateTime(snapshot.updatedAt)}`,
-    width - 28,
-    32,
-    7,
-    fonts.regular,
-    MUTED,
-  );
+  rule(cursor.page, cursor.y, 0.6, INK);
+  cursor.y -= BLOCK_GAP;
+  return cursor;
 }
 
-function planLapBreakdownPages(cars: ResultCar[], passings: LapPassing[]) {
-  const passingsByCar = new Map<string, LapPassing[]>();
+function decisionLines(adjustment: ResultAdjustment) {
+  const lines: Array<{ tag: string; label: string; filled: boolean }> = [];
+  if (adjustment.status === 'DQ')
+    lines.push({ tag: 'DQ', label: 'Disqualified', filled: true });
+  if (adjustment.status === 'DNS')
+    lines.push({ tag: 'DNS', label: 'Did not start', filled: true });
+  if (adjustment.status === 'DNF')
+    lines.push({ tag: 'DNF', label: 'Did not finish', filled: true });
+  if (adjustment.penaltySeconds > 0 || adjustment.status === 'PENALTY')
+    lines.push({
+      tag: 'PEN',
+      label: adjustment.penaltySeconds > 0 ? 'Time penalty' : 'Penalty',
+      filled: false,
+    });
+  if (adjustment.positionOverride)
+    lines.push({
+      tag: `P${adjustment.positionOverride}`,
+      label: 'Position set',
+      filled: false,
+    });
+  if (!lines.length)
+    lines.push({ tag: 'NOTE', label: 'Steward note', filled: false });
+  return lines;
+}
+
+/* Lap breakdown ----------------------------------------------------------- */
+
+function drawLapBreakdown(sheet: Sheet, cursor: Cursor | null, index: string) {
+  const { fonts, cars, passings } = sheet;
+  const lapsByCar = new Map<string, LapPassing[]>();
   passings.forEach((passing) => {
     const key = passing.registrationKey || passing.registrationNumber;
-    passingsByCar.set(key, [...(passingsByCar.get(key) || []), passing]);
+    lapsByCar.set(key, [...(lapsByCar.get(key) || []), passing]);
   });
-  const blocks: LapBlock[] = [];
-  cars.forEach((car) => {
-    const key = car.registrationKey || car.registrationNumber;
-    const laps = [...(passingsByCar.get(key) || [])].sort(
+  const timed = cars.filter((car) => lapsByCar.has(carKey(car)));
+  const untimed = cars.filter((car) => !lapsByCar.has(carKey(car)));
+  const blocks = timed.map((car) => {
+    const laps = [...(lapsByCar.get(carKey(car)) || [])].sort(
       (left, right) =>
         left.lapNumber - right.lapNumber ||
         Date.parse(left.recordedAt) - Date.parse(right.recordedAt),
     );
-    for (let index = 0; index < laps.length; index += 32)
-      blocks.push({
-        car,
-        laps: laps.slice(index, index + 32),
-        continued: index > 0,
+    const times = laps.map(lapMilliseconds);
+    const best = Math.min(...times.filter(Number.isFinite));
+    return {
+      car,
+      laps,
+      best,
+      bestLap: laps[times.indexOf(best)],
+      lines: Math.max(1, Math.ceil(laps.length / LAPS_PER_LINE)),
+    };
+  });
+  const fastest = classificationSummary(sheet).fastest;
+  const fastestKey = fastest ? carKey(fastest) : '';
+  const heading = {
+    index,
+    title: 'Lap breakdown',
+    note: 'Every timed lap. Bold marks each driver’s best lap; a box marks the fastest lap of the session. The small figures under each time are the time of day (CT).',
+  };
+  const columns: Column[] = [
+    { key: 'no', label: ['No.'], x: LEFT, width: 28, align: 'center' },
+    {
+      key: 'driver',
+      label: ['Driver'],
+      x: LEFT + 28,
+      width: 94,
+      align: 'left',
+    },
+    { key: 'best', label: ['Best'], x: LEFT + 122, width: 46, align: 'right' },
+    {
+      key: 'laps',
+      label: ['Lap number and lap time'],
+      x: LEFT + LAP_CELLS_X,
+      width: WIDTH - LAP_CELLS_X,
+      align: 'left',
+    },
+  ];
+  const firstBlock = blocks[0] ? blocks[0].lines * LAP_LINE + 4 : 40;
+  cursor = startSection(sheet, cursor, 60 + TABLE_HEAD + firstBlock);
+  cursor.y = drawSectionHeading(cursor.page, fonts, cursor.y, heading);
+  if (!passings.length) {
+    drawLabel(cursor.page, 'No lap passings were recorded for this session.', {
+      x: LEFT,
+      y: cursor.y - 14,
+      size: 9,
+      font: fonts.text,
+      color: INK_2,
+    });
+    cursor.y -= 26 + BLOCK_GAP;
+    return cursor;
+  }
+  cursor.y = drawTableHead(cursor.page, fonts, columns, cursor.y);
+  const cellWidth = (WIDTH - LAP_CELLS_X) / LAPS_PER_LINE;
+
+  blocks.forEach((block, blockIndex) => {
+    const height = block.lines * LAP_LINE + 4;
+    if (cursor!.y - height < BOTTOM) {
+      cursor = newPage(sheet);
+      cursor.y = drawSectionHeading(cursor.page, fonts, cursor.y, {
+        ...heading,
+        continued: true,
       });
-  });
-  if (!blocks.length) return [[[], [], []] as LapBlock[][]];
-  const pages: LapBlock[][][] = [];
-  let columns: LapBlock[][] = [[], [], []];
-  let columnIndex = 0;
-  let usedLines = 0;
-  blocks.forEach((block) => {
-    const neededLines = block.laps.length + 2;
-    if (usedLines && usedLines + neededLines > 43) {
-      columnIndex += 1;
-      usedLines = 0;
+      cursor.y = drawTableHead(cursor.page, fonts, columns, cursor.y);
     }
-    if (columnIndex === 3) {
-      pages.push(columns);
-      columns = [[], [], []];
-      columnIndex = 0;
+    const { page } = cursor!;
+    const top = cursor!.y;
+    const baseline = top - 11.5;
+    if (blockIndex % 2 === 1)
+      page.drawRectangle({
+        x: LEFT,
+        y: top - height,
+        width: WIDTH,
+        height,
+        color: SHADE,
+      });
+    drawCarNumber(page, fonts, block.car.number, LEFT + 14, top - 10, {
+      height: 13,
+    });
+    drawLabel(page, block.car.driver || `Car ${block.car.number || '–'}`, {
+      x: LEFT + 31,
+      y: baseline,
+      size: 7.8,
+      font: fonts.textBold,
+      maxWidth: 89,
+      minSize: 6.2,
+    });
+    drawLabel(
+      page,
+      [
+        block.car.className,
+        `${block.laps.length} ${block.laps.length === 1 ? 'lap' : 'laps'}`,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      {
+        x: LEFT + 31,
+        y: baseline - 8.5,
+        size: 6.2,
+        font: fonts.text,
+        color: INK_3,
+        maxWidth: 89,
+      },
+    );
+    if (block.bestLap) {
+      drawLabel(
+        page,
+        block.bestLap.lapTime || millisecondsToLapTime(block.best),
+        {
+          x: LEFT + 165,
+          y: baseline,
+          size: 8,
+          font: fonts.dataBold,
+          align: 'right',
+        },
+      );
+      drawLabel(page, `lap ${block.bestLap.lapNumber}`, {
+        x: LEFT + 165,
+        y: baseline - 8.5,
+        size: 6.2,
+        font: fonts.text,
+        color: INK_3,
+        align: 'right',
+      });
     }
-    columns[columnIndex].push(block);
-    usedLines += neededLines;
+    block.laps.forEach((lap, lapIndex) => {
+      const line = Math.floor(lapIndex / LAPS_PER_LINE);
+      const x = LEFT + LAP_CELLS_X + (lapIndex % LAPS_PER_LINE) * cellWidth;
+      const lineBaseline = baseline - line * LAP_LINE;
+      const time = lapMilliseconds(lap);
+      const personalBest = time === block.best;
+      if (lapIndex % LAPS_PER_LINE)
+        page.drawLine({
+          start: { x, y: lineBaseline + 8 },
+          end: { x, y: lineBaseline - 9 },
+          thickness: 0.3,
+          color: RULE,
+        });
+      drawLabel(page, String(lap.lapNumber || '–'), {
+        x: x + 2.5,
+        y: lineBaseline,
+        size: 5.3,
+        font: fonts.data,
+        color: INK_3,
+      });
+      const right = x + cellWidth - 3;
+      const width = drawLabel(page, lap.lapTime || '–', {
+        x: right,
+        y: lineBaseline,
+        size: 7.6,
+        font: personalBest ? fonts.dataBold : fonts.data,
+        align: 'right',
+        maxWidth: cellWidth - 13,
+        minSize: 6,
+      });
+      if (personalBest && carKey(block.car) === fastestKey)
+        drawFastestBox(page, right - width, lineBaseline, width, 7.6);
+      drawLabel(page, formatTimeOfDay(lap.recordedAt), {
+        x: right,
+        y: lineBaseline - 8,
+        size: 5.4,
+        font: fonts.data,
+        color: INK_3,
+        align: 'right',
+      });
+    });
+    cursor!.y -= height;
   });
-  pages.push(columns);
-  return pages;
+  rule(cursor.page, cursor.y, 0.6, INK);
+  if (untimed.length) {
+    const lines = wrapText(
+      untimed
+        .map((car) => `#${car.number || '–'} ${car.driver || 'Unknown driver'}`)
+        .join('  ·  '),
+      fonts.text,
+      7.2,
+      WIDTH - 110,
+    );
+    if (cursor.y - 12 - lines.length * 9.6 < BOTTOM) cursor = newPage(sheet);
+    drawEyebrow(cursor.page, fonts, 'No laps recorded', LEFT, cursor.y - 12);
+    lines.forEach((line, lineIndex) =>
+      drawLabel(cursor!.page, line, {
+        x: LEFT + 110,
+        y: cursor!.y - 12 - lineIndex * 9.6,
+        size: 7.2,
+        font: fonts.text,
+        color: INK_2,
+      }),
+    );
+    cursor.y -= 12 + lines.length * 9.6;
+  }
+  cursor.y -= BLOCK_GAP;
+  return cursor;
 }
 
-function planLapChartPages(passings: LapPassing[]) {
+/* Lap chart --------------------------------------------------------------- */
+
+function drawLapChart(sheet: Sheet, cursor: Cursor, index: string) {
+  const { fonts, cars, passings } = sheet;
   const maxLap = passings.reduce(
     (maximum, passing) => Math.max(maximum, passing.lapNumber),
     0,
   );
-  return maxLap
-    ? chunk(
-        Array.from({ length: maxLap }, (_, index) => index + 1),
-        10,
-      )
-    : [[]];
+  const laps = Array.from({ length: maxLap }, (_, lap) => lap + 1);
+  const orders = new Map(laps.map((lap) => [lap, orderAtLap(passings, lap)]));
+  const rows = Math.max(
+    0,
+    ...[...orders.values()].map((order) => order.length),
+  );
+  const podium = new Map(
+    cars
+      .filter((car) => car.laps > 0)
+      .slice(0, 3)
+      .map((car, place) => [carKey(car), place]),
+  );
+  const showGraph = sheet.order === 'position' && maxLap >= 2 && rows >= 2;
+  const heading = {
+    index,
+    title: 'Lap chart',
+    note:
+      sheet.order === 'position'
+        ? 'Running order at the end of each lap. Each line follows one car; the top three finishers are drawn in black.'
+        : 'The order in which cars completed each lap, by elapsed time.',
+  };
+  const graphHeight = Math.min(300, Math.max(110, (rows - 1) * 9.5));
+  const tableRow = rows > 30 ? 9.6 : 11;
+  const firstNeed = showGraph
+    ? graphHeight + 48
+    : TABLE_HEAD + Math.min(rows, 6) * tableRow;
+  cursor = startSection(sheet, cursor, 60 + firstNeed);
+  cursor.y = drawSectionHeading(cursor.page, fonts, cursor.y, heading);
+  if (!passings.length) {
+    drawLabel(cursor.page, 'No lap positions were recorded for this session.', {
+      x: LEFT,
+      y: cursor.y - 14,
+      size: 9,
+      font: fonts.text,
+      color: INK_2,
+    });
+    return;
+  }
+  const numberFor = (passing: LapPassing) =>
+    cars.find((car) => carKey(car) === passingKey(passing))?.number ||
+    passing.number;
+
+  if (showGraph) {
+    cursor.y = drawPositionGraph(cursor.page, sheet, {
+      top: cursor.y - 4,
+      height: graphHeight,
+      laps,
+      orders,
+      rows,
+      podium,
+      numberFor,
+    });
+    cursor.y -= 6;
+  }
+
+  const chunks = Math.ceil(maxLap / 20);
+  const perChunk = Math.ceil(maxLap / chunks);
+  for (let chunk = 0; chunk < chunks; chunk += 1) {
+    const chunkLaps = laps.slice(chunk * perChunk, (chunk + 1) * perChunk);
+    const cellWidth = Math.min(40, (WIDTH - 28) / perChunk);
+    const columns: Column[] = [
+      { key: 'pos', label: ['Pos'], x: LEFT, width: 28, align: 'left' },
+      ...chunkLaps.map((lap, lapIndex) => ({
+        key: String(lap),
+        label: [lapIndex ? String(lap) : `Lap ${lap}`],
+        x: LEFT + 28 + lapIndex * cellWidth,
+        width: cellWidth,
+        align: 'center' as const,
+      })),
+    ];
+    if (cursor.y - TABLE_HEAD - Math.min(rows, 5) * tableRow < BOTTOM) {
+      cursor = newPage(sheet);
+      cursor.y = drawSectionHeading(cursor.page, fonts, cursor.y, {
+        ...heading,
+        continued: true,
+      });
+    }
+    cursor.y = drawTableHead(cursor.page, fonts, columns, cursor.y);
+    for (let row = 0; row < rows; row += 1) {
+      if (cursor.y - tableRow < BOTTOM) {
+        rule(cursor.page, cursor.y, 0.6, INK);
+        cursor = newPage(sheet);
+        cursor.y = drawSectionHeading(cursor.page, fonts, cursor.y, {
+          ...heading,
+          continued: true,
+        });
+        cursor.y = drawTableHead(cursor.page, fonts, columns, cursor.y);
+      }
+      const { page } = cursor;
+      const baseline = cursor.y - tableRow / 2 - CAP_HEIGHT * 3.4;
+      if (row % 2 === 1)
+        page.drawRectangle({
+          x: LEFT,
+          y: cursor.y - tableRow,
+          width: WIDTH,
+          height: tableRow,
+          color: SHADE,
+        });
+      drawLabel(page, `P${row + 1}`, {
+        x: LEFT + 3,
+        y: baseline,
+        size: 6.8,
+        font: fonts.dataBold,
+        color: INK_2,
+      });
+      chunkLaps.forEach((lap, lapIndex) => {
+        const passing = orders.get(lap)?.[row];
+        if (!passing) return;
+        const column = columns[lapIndex + 1];
+        drawLabel(page, numberFor(passing), {
+          x: column.x + column.width / 2,
+          y: baseline,
+          size: 6.8,
+          font: podium.has(passingKey(passing)) ? fonts.dataBold : fonts.data,
+          align: 'center',
+          maxWidth: column.width - 2,
+          minSize: 5,
+        });
+      });
+      cursor.y -= tableRow;
+    }
+    rule(cursor.page, cursor.y, 0.6, INK);
+    cursor.y -= BLOCK_GAP;
+  }
 }
 
-function initialPassingOrder(cars: ResultCar[], passings: LapPassing[]) {
-  const firstByKey = new Map<string, LapPassing>();
-  passings.forEach((passing) => {
-    const key = passing.registrationKey || passing.registrationNumber;
-    if (!firstByKey.has(key)) firstByKey.set(key, passing);
+function drawPositionGraph(
+  page: PDFPage,
+  sheet: Sheet,
+  graph: {
+    top: number;
+    height: number;
+    laps: number[];
+    orders: Map<number, LapPassing[]>;
+    rows: number;
+    podium: Map<string, number>;
+    numberFor: (passing: LapPassing) => string;
+  },
+) {
+  const { fonts, cars } = sheet;
+  const { top, height, laps, orders, rows, podium } = graph;
+  const left = LEFT + 26;
+  const right = RIGHT - 30;
+  const bottom = top - height;
+  const xFor = (lap: number) =>
+    left + ((lap - 1) / (laps.length - 1)) * (right - left);
+  const yFor = (position: number) =>
+    top - ((position - 1) / (rows - 1)) * height;
+  const spacing = height / (rows - 1);
+  const labelEvery = spacing >= 7 ? 1 : 5;
+  const lapEvery = (right - left) / (laps.length - 1) >= 12 ? 1 : 5;
+
+  for (let position = 1; position <= rows; position += 1) {
+    if (position !== 1 && position % labelEvery && position !== rows) continue;
+    page.drawLine({
+      start: { x: left, y: yFor(position) },
+      end: { x: right, y: yFor(position) },
+      thickness: 0.25,
+      color: RULE,
+    });
+    drawLabel(page, `P${position}`, {
+      x: left - 6,
+      y: yFor(position) - CAP_HEIGHT * 2.9,
+      size: 5.8,
+      font: fonts.data,
+      color: INK_3,
+      align: 'right',
+    });
+  }
+  laps.forEach((lap) => {
+    if (lap !== 1 && lap % lapEvery && lap !== laps.length) return;
+    page.drawLine({
+      start: { x: xFor(lap), y: top + 3 },
+      end: { x: xFor(lap), y: bottom - 3 },
+      thickness: 0.25,
+      color: RULE,
+    });
+    drawLabel(page, String(lap), {
+      x: xFor(lap),
+      y: bottom - 11,
+      size: 5.8,
+      font: fonts.data,
+      color: INK_3,
+      align: 'center',
+    });
   });
-  const carByKey = new Map(
-    cars.map((car) => [car.registrationKey || car.registrationNumber, car]),
+  drawLabel(page, 'Lap', {
+    x: left - 6,
+    y: bottom - 11,
+    size: 5.8,
+    font: fonts.label,
+    color: INK_3,
+    align: 'right',
+  });
+
+  const tracks = new Map<string, Array<{ lap: number; position: number }>>();
+  laps.forEach((lap) =>
+    orders.get(lap)?.forEach((passing, index) => {
+      const key = passingKey(passing);
+      tracks.set(key, [
+        ...(tracks.get(key) || []),
+        { lap, position: index + 1 },
+      ]);
+    }),
   );
-  const ordered = [...firstByKey.entries()]
-    .sort(
-      (left, right) =>
-        Date.parse(left[1].recordedAt) - Date.parse(right[1].recordedAt),
-    )
-    .flatMap(([key]) => (carByKey.has(key) ? [carByKey.get(key)!] : []));
-  const seen = new Set(
-    ordered.map((car) => car.registrationKey || car.registrationNumber),
-  );
-  return [
-    ...ordered,
-    ...cars.filter(
-      (car) => !seen.has(car.registrationKey || car.registrationNumber),
-    ),
+  const styles = [
+    { thickness: 1.7, dashArray: undefined, lineCap: LineCapStyle.Round },
+    { thickness: 1.35, dashArray: [3.6, 1.8], lineCap: LineCapStyle.Butt },
+    { thickness: 1.5, dashArray: [0.01, 2.6], lineCap: LineCapStyle.Round },
   ];
+  const ordered = [...tracks.entries()].sort(
+    ([left], [right]) => (podium.get(right) ?? -1) - (podium.get(left) ?? -1),
+  );
+  ordered.forEach(([key, points]) => {
+    const place = podium.get(key);
+    const style =
+      place === undefined
+        ? { thickness: 0.7, dashArray: undefined, lineCap: LineCapStyle.Round }
+        : styles[place];
+    points.slice(1).forEach((point, index) => {
+      const previous = points[index];
+      if (point.lap !== previous.lap + 1) return;
+      page.drawLine({
+        start: { x: xFor(previous.lap), y: yFor(previous.position) },
+        end: { x: xFor(point.lap), y: yFor(point.position) },
+        thickness: style.thickness,
+        color: place === undefined ? CHART_LINE : INK,
+        dashArray: style.dashArray,
+        lineCap: style.lineCap,
+      });
+    });
+  });
+  ordered.forEach(([key, points]) => {
+    const last = points.at(-1)!;
+    const passing = graph.orders.get(last.lap)?.[last.position - 1];
+    if (!passing) return;
+    const size = spacing >= 9 ? 6.4 : 5.6;
+    const label = graph.numberFor(passing);
+    const x = xFor(last.lap) + 4;
+    const y = yFor(last.position);
+    if (last.lap !== laps.length) {
+      const width = measure(label, fonts.dataBold, size);
+      page.drawRectangle({
+        x: x - 1,
+        y: y - size * 0.45,
+        width: width + 2,
+        height: size * 0.9,
+        color: WHITE,
+      });
+    }
+    drawLabel(page, label, {
+      x,
+      y: y - CAP_HEIGHT * size * 0.5,
+      size,
+      font: podium.has(key) ? fonts.dataBold : fonts.data,
+      color: podium.has(key) ? INK : INK_2,
+    });
+  });
+
+  let x = left;
+  const legendY = bottom - 26;
+  const podiumCars = cars.filter((car) => podium.has(carKey(car)));
+  podiumCars.forEach((car) => {
+    const style = styles[podium.get(carKey(car))!];
+    page.drawLine({
+      start: { x, y: legendY + 2.4 },
+      end: { x: x + 22, y: legendY + 2.4 },
+      thickness: style.thickness,
+      color: INK,
+      dashArray: style.dashArray,
+      lineCap: style.lineCap,
+    });
+    x += 27;
+    x +=
+      drawLabel(
+        page,
+        `${ordinal(podium.get(carKey(car))! + 1)} #${car.number} ${car.driver}`,
+        {
+          x,
+          y: legendY,
+          size: 6.6,
+          font: fonts.text,
+          color: INK_2,
+          maxWidth: 120,
+        },
+      ) + 14;
+  });
+  page.drawLine({
+    start: { x, y: legendY + 2.4 },
+    end: { x: x + 22, y: legendY + 2.4 },
+    thickness: 0.7,
+    color: CHART_LINE,
+  });
+  drawLabel(page, 'Other cars, labelled with the car number', {
+    x: x + 27,
+    y: legendY,
+    size: 6.6,
+    font: fonts.text,
+    color: INK_2,
+  });
+  return legendY - 10;
 }
 
 function orderAtLap(passings: LapPassing[], lapNumber: number) {
@@ -1103,103 +1715,896 @@ function orderAtLap(passings: LapPassing[], lapNumber: number) {
     });
 }
 
-function drawCheckers(page: PDFPage, x: number, y: number) {
-  const size = 6;
-  for (let row = 0; row < 3; row += 1)
-    for (let column = 0; column < 7; column += 1)
-      page.drawRectangle({
-        x: x + column * size,
-        y: y + row * size,
-        width: size,
-        height: size,
-        color: (row + column) % 2 === 0 ? rgb(1, 1, 1) : YELLOW,
+/* Page furniture ---------------------------------------------------------- */
+
+function drawFirstHeader(page: PDFPage, sheet: Sheet) {
+  const { fonts, snapshot, logo } = sheet;
+  drawCheckerStrip(page);
+  const logoHeight = 40;
+  const textX = drawLogo(page, fonts, logo, 752, logoHeight) + 14;
+  drawEyebrow(page, fonts, 'CVAR Live Timing — Result sheet', textX, 742);
+  drawLabel(page, snapshot.eventName || 'CVAR race weekend', {
+    x: textX,
+    y: 726,
+    size: 12,
+    font: fonts.textBold,
+    maxWidth: 410 - textX,
+    minSize: 9,
+  });
+  drawLabel(page, 'Corinthian Vintage Auto Racing', {
+    x: textX,
+    y: 714.5,
+    size: 7.6,
+    font: fonts.text,
+    color: INK_2,
+  });
+  drawStamp(page, fonts, RIGHT - 150, 712, 150, 40, STATUS_STAMP);
+
+  const date = trackDateParts(snapshot.initializedAt || snapshot.updatedAt);
+  let titleWidth = WIDTH;
+  if (date) {
+    const dayWidth = measure(date.day, fonts.display, 36);
+    const textWidth = Math.max(
+      measure(date.weekday.toUpperCase(), fonts.label, 7, 0.14),
+      measure(date.date, fonts.text, 8.6),
+    );
+    const x = RIGHT - textWidth - dayWidth - 7;
+    drawLabel(page, date.day, {
+      x,
+      y: 664,
+      size: 36,
+      font: fonts.display,
+      outline: 0.9,
+    });
+    drawEyebrow(page, fonts, date.weekday, x + dayWidth + 7, 680, INK);
+    drawLabel(page, date.date, {
+      x: x + dayWidth + 7,
+      y: 668,
+      size: 8.6,
+      font: fonts.text,
+    });
+    titleWidth = x - LEFT - 16;
+  }
+  const title = sheet.title.toUpperCase();
+  if (measure(title, fonts.display, 17, -0.01) <= titleWidth)
+    drawLabel(page, title, {
+      x: LEFT,
+      y: 668,
+      size: 27,
+      font: fonts.display,
+      maxWidth: titleWidth,
+      minSize: 17,
+      tracking: -0.01,
+    });
+  else {
+    // Long run names take two lines rather than shrinking out of sight.
+    let size = 17;
+    let lines = wrapText(title, fonts.display, size, titleWidth);
+    while (lines.length > 2 && size > 12) {
+      size -= 0.5;
+      lines = wrapText(title, fonts.display, size, titleWidth);
+    }
+    [lines[0], lines.slice(1).join(' ')].forEach((line, index) =>
+      drawLabel(page, line, {
+        x: LEFT,
+        y: 664 + (1 - index) * size * 1.08,
+        size,
+        font: fonts.display,
+        maxWidth: titleWidth,
+        tracking: -0.01,
+      }),
+    );
+  }
+
+  const flag = flagStatus(snapshot.flag);
+  const facts = [
+    {
+      label: 'Track',
+      value: [snapshot.trackName, trackDistance(snapshot.trackLength)]
+        .filter(Boolean)
+        .join(' · '),
+      width: 206,
+    },
+    { label: 'Start', value: date ? `${date.time} CT` : '', width: 96 },
+    { label: 'Session status', value: flag.label, width: 128, flag },
+    {
+      label: 'Elapsed',
+      value: snapshot.raceTime ? shortTime(snapshot.raceTime) : '',
+      width: 110,
+    },
+  ];
+  rule(page, 646, 1.2, INK);
+  rule(page, FIRST_HEADER_BOTTOM, 0.5, RULE);
+  let x = LEFT;
+  facts.forEach((fact, index) => {
+    const pad = index ? 9 : 0;
+    if (index)
+      page.drawLine({
+        start: { x, y: FIRST_HEADER_BOTTOM + 5 },
+        end: { x, y: 641 },
+        thickness: 0.4,
+        color: RULE,
       });
+    drawEyebrow(page, fonts, fact.label, x + pad, 634);
+    let valueX = x + pad;
+    if (fact.flag)
+      valueX += drawFlagSwatch(page, fact.flag.tone, valueX, 619.5) + 5;
+    drawLabel(page, fact.value || '–', {
+      x: valueX,
+      y: 618,
+      size: 9.6,
+      font: fonts.textBold,
+      color: fact.value ? INK : INK_3,
+      maxWidth: fact.width - (valueX - x) - 6,
+      minSize: 7,
+    });
+    x += fact.width;
+  });
+  return FIRST_HEADER_BOTTOM;
 }
 
-function podiumStyle(position: number) {
-  if (position === 1) return { accent: PODIUM_GOLD, tint: PODIUM_GOLD_TINT };
-  if (position === 2)
-    return { accent: PODIUM_SILVER, tint: PODIUM_SILVER_TINT };
-  if (position === 3)
-    return { accent: PODIUM_BRONZE, tint: PODIUM_BRONZE_TINT };
-  return null;
+function drawRunningHeader(page: PDFPage, sheet: Sheet) {
+  const { fonts, snapshot, logo } = sheet;
+  drawCheckerStrip(page);
+  const textX = drawLogo(page, fonts, logo, 752, 26) + 12;
+  drawEyebrow(page, fonts, 'CVAR Live Timing — Result sheet', textX, 745);
+  drawLabel(page, sheet.title.toUpperCase(), {
+    x: textX,
+    y: 731,
+    size: 12.5,
+    font: fonts.display,
+    maxWidth: RIGHT - 130 - textX,
+    minSize: 8,
+  });
+  const date = trackDateParts(snapshot.initializedAt || snapshot.updatedAt);
+  drawLabel(
+    page,
+    [snapshot.eventName, snapshot.trackName, date?.date]
+      .filter(Boolean)
+      .join(' · '),
+    {
+      x: textX,
+      y: 720,
+      size: 7.4,
+      font: fonts.text,
+      color: INK_2,
+      maxWidth: RIGHT - 130 - textX,
+    },
+  );
+  drawStamp(page, fonts, RIGHT - 112, 722, 112, 28, STATUS_STAMP);
+  rule(page, RUNNING_HEADER_BOTTOM, 1.2, INK);
+  return RUNNING_HEADER_BOTTOM;
 }
 
-function drawPodiumMark(
+function drawFooter(
   page: PDFPage,
+  sheet: Sheet,
+  pageNumber: number,
+  totalPages: number,
+) {
+  const { fonts, snapshot } = sheet;
+  rule(page, 50, 0.5, RULE);
+  const statusWidth = drawEyebrow(
+    page,
+    fonts,
+    'Provisional results',
+    LEFT,
+    39,
+    INK,
+  );
+  drawLabel(page, '· Subject to steward review', {
+    x: LEFT + statusWidth + 4,
+    y: 39,
+    size: 6.8,
+    font: fonts.text,
+    color: INK_2,
+  });
+  drawLabel(page, `Page ${pageNumber} of ${totalPages}`, {
+    x: RIGHT,
+    y: 39,
+    size: 7.4,
+    font: fonts.label,
+    align: 'right',
+  });
+  drawLabel(
+    page,
+    `Corinthian Vintage Auto Racing · CVAR Live Timing · ${sheet.title}`,
+    {
+      x: LEFT,
+      y: 29,
+      size: 6.4,
+      font: fonts.text,
+      color: INK_3,
+      maxWidth: 330,
+    },
+  );
+  drawLabel(page, `Timing data as of ${formatDateTime(snapshot.updatedAt)}`, {
+    x: RIGHT,
+    y: 29,
+    size: 6.4,
+    font: fonts.text,
+    color: INK_3,
+    align: 'right',
+  });
+}
+
+function drawSectionHeading(
+  page: PDFPage,
+  fonts: Fonts,
+  top: number,
+  heading: { index: string; title: string; note: string; continued?: boolean },
+) {
+  const baseline = top - 28;
+  const indexWidth = drawLabel(page, heading.index, {
+    x: LEFT,
+    y: baseline,
+    size: 17,
+    font: fonts.display,
+    outline: 0.7,
+  });
+  const titleWidth = drawLabel(page, heading.title.toUpperCase(), {
+    x: LEFT + indexWidth + 7,
+    y: baseline,
+    size: 17,
+    font: fonts.display,
+  });
+  if (heading.continued) {
+    drawEyebrow(
+      page,
+      fonts,
+      'Continued',
+      LEFT + indexWidth + titleWidth + 14,
+      baseline,
+    );
+    return baseline - 12;
+  }
+  const lines = wrapText(heading.note, fonts.text, 7.6, WIDTH);
+  lines.forEach((line, index) =>
+    drawLabel(page, line, {
+      x: LEFT,
+      y: baseline - 13 - index * 9.6,
+      size: 7.6,
+      font: fonts.text,
+      color: INK_2,
+    }),
+  );
+  return baseline - 13 - (lines.length - 1) * 9.6 - 10;
+}
+
+function drawKicker(
+  page: PDFPage,
+  fonts: Fonts,
+  kicker: { y: number; index: string; label: string; note: string },
+) {
+  const indexWidth = drawEyebrow(
+    page,
+    fonts,
+    kicker.index,
+    LEFT,
+    kicker.y,
+    INK,
+  );
+  page.drawLine({
+    start: { x: LEFT + indexWidth + 6, y: kicker.y + 2.2 },
+    end: { x: LEFT + indexWidth + 28, y: kicker.y + 2.2 },
+    thickness: 0.8,
+    color: INK,
+  });
+  drawEyebrow(page, fonts, kicker.label, LEFT + indexWidth + 34, kicker.y, INK);
+  drawLabel(page, kicker.note, {
+    x: RIGHT,
+    y: kicker.y,
+    size: 7,
+    font: fonts.text,
+    color: INK_2,
+    align: 'right',
+  });
+}
+
+function drawTableHead(
+  page: PDFPage,
+  fonts: Fonts,
+  columns: Column[],
+  top: number,
+) {
+  rule(page, top, 1.2, INK);
+  columns.forEach((column) => {
+    const lines = column.label;
+    lines.forEach((line, index) => {
+      const baseline = top - TABLE_HEAD + 6 + (lines.length - 1 - index) * 7;
+      const anchor =
+        column.align === 'right'
+          ? column.x + column.width - 3
+          : column.align === 'center'
+            ? column.x + column.width / 2
+            : column.x + 3;
+      drawLabel(page, line.toUpperCase(), {
+        x: anchor,
+        y: baseline,
+        size: 5.6,
+        font: fonts.label,
+        color: INK_3,
+        align: column.align,
+        tracking: 0.08,
+        maxWidth: Math.max(column.width - 4, 12),
+        minSize: 4.4,
+      });
+    });
+  });
+  rule(page, top - TABLE_HEAD, 0.5, INK);
+  return top - TABLE_HEAD;
+}
+
+function newPage(sheet: Sheet): Cursor {
+  const page = sheet.document.addPage(LETTER);
+  return { page, y: drawRunningHeader(page, sheet) - 4 };
+}
+
+function startSection(sheet: Sheet, cursor: Cursor | null, needed: number) {
+  return cursor && cursor.y - needed >= BOTTOM ? cursor : newPage(sheet);
+}
+
+/* Marks ------------------------------------------------------------------- */
+
+function drawCheckerStrip(page: PDFPage) {
+  const size = 3;
+  for (let column = 0; column < WIDTH / size; column += 1)
+    for (let row = 0; row < 2; row += 1)
+      if ((column + row) % 2 === 0)
+        page.drawRectangle({
+          x: LEFT + column * size,
+          y: 762 + row * size,
+          width: size,
+          height: size,
+          color: INK,
+        });
+}
+
+function drawLogo(
+  page: PDFPage,
+  fonts: Fonts,
+  logo: PDFImage | null,
+  top: number,
+  height: number,
+) {
+  if (logo) {
+    const width = (logo.width / logo.height) * height;
+    page.drawImage(logo, { x: LEFT, y: top - height, width, height });
+    return LEFT + width;
+  }
+  return (
+    LEFT +
+    drawLabel(page, 'CVAR', {
+      x: LEFT,
+      y: top - height * 0.75,
+      size: height * 0.6,
+      font: fonts.display,
+    })
+  );
+}
+
+function drawStamp(
+  page: PDFPage,
+  fonts: Fonts,
   x: number,
   y: number,
-  color: ReturnType<typeof rgb>,
+  width: number,
+  height: number,
+  stamp: { title: string; subtitle: string; filled: boolean },
 ) {
-  const bars = [
-    { x: x + 0.5, height: 3.2 },
-    { x: x + 4, height: 6.2 },
-    { x: x + 7.5, height: 2.3 },
-  ];
-  bars.forEach((bar) =>
+  page.drawRectangle({
+    x,
+    y,
+    width,
+    height,
+    color: stamp.filled ? YELLOW : undefined,
+    borderColor: INK,
+    borderWidth: 1.3,
+  });
+  page.drawRectangle({
+    x: x + 2.6,
+    y: y + 2.6,
+    width: width - 5.2,
+    height: height - 5.2,
+    borderColor: INK,
+    borderWidth: 0.5,
+  });
+  const titleSize = Math.min(14, height * 0.36);
+  drawLabel(page, stamp.title.toUpperCase(), {
+    x: x + width / 2,
+    y: y + height * 0.5,
+    size: titleSize,
+    font: fonts.display,
+    align: 'center',
+    maxWidth: width - 14,
+    minSize: 7,
+  });
+  drawLabel(page, stamp.subtitle.toUpperCase(), {
+    x: x + width / 2,
+    y: y + height * 0.5 - titleSize * 0.95,
+    size: Math.min(5.6, height * 0.16),
+    font: fonts.label,
+    align: 'center',
+    tracking: 0.1,
+    maxWidth: width - 14,
+    minSize: 3.8,
+  });
+}
+
+function drawPosition(
+  page: PDFPage,
+  fonts: Fonts,
+  position: number,
+  x: number,
+  middle: number,
+  { size }: { size: number },
+) {
+  const fill =
+    position === 1
+      ? YELLOW
+      : position === 2
+        ? PODIUM_2
+        : position === 3
+          ? PODIUM_3
+          : null;
+  if (fill)
     page.drawRectangle({
-      x: bar.x,
-      y,
-      width: 2.6,
-      height: bar.height,
-      color,
-      borderColor: color,
-      borderWidth: 0.3,
+      x,
+      y: middle - size / 2,
+      width: size,
+      height: size,
+      color: fill,
+      borderColor: INK,
+      borderWidth: 0.9,
+    });
+  const textSize = size * 0.66;
+  drawLabel(page, String(position || '–'), {
+    x: x + size / 2,
+    y: middle - CAP_HEIGHT * textSize * 0.5,
+    size: textSize,
+    font: fonts.dataBold,
+    align: 'center',
+  });
+  if (!fill) return;
+  // Podium steps (2nd, 1st, 3rd) with this car's step filled in, so the
+  // top three read in black-and-white print as well as in colour.
+  const bar = size * 0.19;
+  const gap = size * 0.06;
+  const base = middle - size / 2;
+  [
+    { place: 2, height: 0.62 },
+    { place: 1, height: 0.88 },
+    { place: 3, height: 0.42 },
+  ].forEach((step, index) =>
+    page.drawRectangle({
+      x: x + size + 2.5 + index * (bar + gap),
+      y: base,
+      width: bar,
+      height: size * step.height,
+      color: step.place === position ? INK : undefined,
+      borderColor: INK,
+      borderWidth: 0.45,
     }),
   );
 }
 
-function drawCell(
+function drawCarNumber(
   page: PDFPage,
+  fonts: Fonts,
+  value: string,
+  center: number,
+  middle: number,
+  { height }: { height: number },
+) {
+  const label = printable(value || '–', fonts.dataBold);
+  const size = height * (label.length > 2 ? 0.52 : 0.58);
+  const width = Math.max(
+    height,
+    measure(label, fonts.dataBold, size) + height * 0.55,
+  );
+  const radius = height / 2;
+  const left = center - width / 2;
+  page.drawSvgPath(
+    `M ${radius} 0 H ${width - radius} A ${radius} ${radius} 0 0 1 ${width - radius} ${height} H ${radius} A ${radius} ${radius} 0 0 1 ${radius} 0 Z`,
+    {
+      x: left,
+      y: middle + radius,
+      color: WHITE,
+      borderColor: INK,
+      borderWidth: Math.max(0.9, height * 0.085),
+    },
+  );
+  drawLabel(page, label, {
+    x: center,
+    y: middle - CAP_HEIGHT * size * 0.5,
+    size,
+    font: fonts.dataBold,
+    align: 'center',
+  });
+}
+
+function adjustmentTag(adjustment?: ResultAdjustment) {
+  if (!adjustment) return null;
+  const penalty =
+    adjustment.penaltySeconds > 0
+      ? `+${adjustment.penaltySeconds.toFixed(3).replace(/\.?0+$/, '')}s`
+      : '';
+  if (adjustment.status === 'PENALTY' || (!adjustment.status && penalty))
+    return { label: `PEN ${penalty}`.trim(), filled: false };
+  if (adjustment.status) return { label: adjustment.status, filled: true };
+  return {
+    label: adjustment.positionOverride
+      ? `P${adjustment.positionOverride}`
+      : 'STEWARD',
+    filled: false,
+  };
+}
+
+function measureTag(fonts: Fonts, label: string) {
+  return measure(label, fonts.label, 5.6, 0.06) + 5;
+}
+
+function drawTag(
+  page: PDFPage,
+  fonts: Fonts,
+  label: string,
+  x: number,
+  middle: number,
+  { filled }: { filled: boolean },
+) {
+  const width = measureTag(fonts, label);
+  page.drawRectangle({
+    x,
+    y: middle - 4.4,
+    width,
+    height: 8.8,
+    color: filled ? INK : WHITE,
+    borderColor: INK,
+    borderWidth: 0.7,
+  });
+  drawLabel(page, label, {
+    x: x + 2.5,
+    y: middle - CAP_HEIGHT * 2.8,
+    size: 5.6,
+    font: fonts.label,
+    color: filled ? WHITE : INK,
+    tracking: 0.06,
+  });
+  return width;
+}
+
+function drawClassTag(
+  page: PDFPage,
+  fonts: Fonts,
+  value: string,
+  x: number,
+  middle: number,
+  { maxWidth, size = 5.6 }: { maxWidth: number; size?: number },
+) {
+  const label = fitSize(value.toUpperCase(), fonts.label, {
+    size,
+    minSize: 4.4,
+    maxWidth: maxWidth - 5,
+    tracking: 0.06,
+  });
+  const width = measure(label.text, fonts.label, label.size, 0.06) + 5;
+  page.drawRectangle({
+    x,
+    y: middle - 4.3,
+    width,
+    height: 8.6,
+    borderColor: INK_3,
+    borderWidth: 0.55,
+  });
+  drawLabel(page, label.text, {
+    x: x + 2.5,
+    y: middle - CAP_HEIGHT * label.size * 0.5,
+    size: label.size,
+    font: fonts.label,
+    color: INK_2,
+    tracking: 0.06,
+  });
+  return width;
+}
+
+function drawFastestBox(
+  page: PDFPage,
+  x: number,
+  baseline: number,
+  width: number,
+  size: number,
+) {
+  page.drawRectangle({
+    x: x - 1.8,
+    y: baseline - 2.1,
+    width: width + 3.6,
+    height: size * CAP_HEIGHT + 4.2,
+    borderColor: INK,
+    borderWidth: 0.85,
+  });
+}
+
+function drawFlagSwatch(page: PDFPage, tone: string, x: number, y: number) {
+  const width = 12;
+  const height = 8;
+  if (tone === 'checkered') {
+    for (let row = 0; row < 2; row += 1)
+      for (let column = 0; column < 3; column += 1)
+        if ((row + column) % 2 === 0)
+          page.drawRectangle({
+            x: x + column * 4,
+            y: y + row * 4,
+            width: 4,
+            height: 4,
+            color: INK,
+          });
+  }
+  page.drawRectangle({
+    x,
+    y,
+    width,
+    height,
+    color: tone === 'checkered' ? undefined : FLAG_COLORS[tone] || WHITE,
+    borderColor: INK,
+    borderWidth: 0.7,
+  });
+  return width;
+}
+
+function drawEyebrow(
+  page: PDFPage,
+  fonts: Fonts,
   value: string,
   x: number,
   y: number,
-  width: number,
-  size: number,
-  font: PDFFont,
-  color: ReturnType<typeof rgb>,
-  align: 'left' | 'right' | 'center',
+  color: Color = INK_3,
 ) {
-  const text = fitText(safeText(value), font, size, width);
-  const textWidth = font.widthOfTextAtSize(text, size);
-  const textX =
-    align === 'right'
-      ? x + width - textWidth
-      : align === 'center'
-        ? x + (width - textWidth) / 2
-        : x;
-  page.drawText(text, { x: textX, y, size, font, color });
+  return drawLabel(page, value.toUpperCase(), {
+    x,
+    y,
+    size: 6.2,
+    font: fonts.label,
+    color,
+    tracking: 0.12,
+  });
 }
 
-function drawRight(
-  page: PDFPage,
-  value: string,
-  right: number,
-  y: number,
-  size: number,
-  font: PDFFont,
-  color: ReturnType<typeof rgb>,
-) {
-  const text = safeText(value);
-  page.drawText(text, {
-    x: right - font.widthOfTextAtSize(text, size),
-    y,
-    size,
-    font,
+function rule(page: PDFPage, y: number, thickness: number, color: Color) {
+  page.drawLine({
+    start: { x: LEFT, y },
+    end: { x: RIGHT, y },
+    thickness,
     color,
   });
 }
 
-function fitText(value: string, font: PDFFont, size: number, maxWidth: number) {
-  if (font.widthOfTextAtSize(value, size) <= maxWidth) return value;
-  let text = value;
-  while (
-    text.length > 1 &&
-    font.widthOfTextAtSize(`${text}...`, size) > maxWidth
-  )
-    text = text.slice(0, -1);
-  return `${text.trimEnd()}...`;
+/* Text -------------------------------------------------------------------- */
+
+type TextOptions = {
+  x: number;
+  y: number;
+  size: number;
+  font: PDFFont;
+  color?: Color;
+  align?: Align;
+  maxWidth?: number;
+  minSize?: number;
+  /** Letter spacing in em. */
+  tracking?: number;
+  /** Stroke width for outlined lettering. */
+  outline?: number;
+};
+
+/** Draws real, selectable text and returns its width. */
+function drawLabel(page: PDFPage, value: string, options: TextOptions) {
+  const { font, color = INK, align = 'left', tracking = 0, outline } = options;
+  const fitted =
+    options.maxWidth === undefined
+      ? { text: printable(value, font), size: options.size }
+      : fitSize(value, font, {
+          size: options.size,
+          minSize: options.minSize ?? options.size,
+          maxWidth: options.maxWidth,
+          tracking,
+        });
+  if (!fitted.text) return 0;
+  const { text, size } = fitted;
+  const width = measure(text, font, size, tracking);
+  const x =
+    align === 'right'
+      ? options.x - width
+      : align === 'center'
+        ? options.x - width / 2
+        : options.x;
+  const styled = Boolean(tracking || outline);
+  if (styled) {
+    page.pushOperators(pushGraphicsState());
+    if (tracking) page.pushOperators(setCharacterSpacing(tracking * size));
+    if (outline)
+      page.pushOperators(
+        setTextRenderingMode(TextRenderingMode.Outline),
+        setLineWidth(outline),
+        setStrokingColor(color),
+      );
+  }
+  page.drawText(text, { x, y: options.y, size, font, color });
+  if (styled) page.pushOperators(popGraphicsState());
+  return width;
 }
+
+function cellText(
+  page: PDFPage,
+  value: string,
+  column: Column,
+  baseline: number,
+  options: { size: number; font: PDFFont; color?: Color; minSize?: number },
+) {
+  const anchor =
+    column.align === 'right'
+      ? column.x + column.width - 3
+      : column.align === 'center'
+        ? column.x + column.width / 2
+        : column.x + 3;
+  return drawLabel(page, value || '–', {
+    ...options,
+    x: anchor,
+    y: baseline,
+    color: value ? options.color : INK_3,
+    align: column.align,
+    maxWidth: column.width - 6,
+    minSize: options.minSize ?? options.size - 1.2,
+  });
+}
+
+/** Shrinks text towards minSize, then shortens it, to fit maxWidth. */
+function fitSize(
+  value: string,
+  font: PDFFont,
+  {
+    size,
+    minSize,
+    maxWidth,
+    tracking = 0,
+  }: { size: number; minSize: number; maxWidth: number; tracking?: number },
+) {
+  const text = printable(value, font);
+  let fittedSize = size;
+  while (
+    fittedSize > minSize &&
+    measure(text, font, fittedSize, tracking) > maxWidth
+  )
+    fittedSize = Math.max(minSize, fittedSize - 0.2);
+  if (measure(text, font, fittedSize, tracking) <= maxWidth)
+    return { text, size: fittedSize };
+  const characters = Array.from(text);
+  while (
+    characters.length > 1 &&
+    measure(`${characters.join('').trimEnd()}…`, font, fittedSize, tracking) >
+      maxWidth
+  )
+    characters.pop();
+  return { text: `${characters.join('').trimEnd()}…`, size: fittedSize };
+}
+
+function measure(text: string, font: PDFFont, size: number, tracking = 0) {
+  const glyphs = Array.from(text).length;
+  return (
+    font.widthOfTextAtSize(text, size) +
+    tracking * size * Math.max(0, glyphs - 1)
+  );
+}
+
+function wrapText(value: string, font: PDFFont, size: number, width: number) {
+  const lines: string[] = [];
+  let line = '';
+  printable(value, font)
+    .split(' ')
+    .filter(Boolean)
+    .forEach((word) => {
+      const candidate = line ? `${line} ${word}` : word;
+      if (measure(candidate, font, size) <= width) {
+        line = candidate;
+        return;
+      }
+      if (line) lines.push(line);
+      let rest = word;
+      while (measure(rest, font, size) > width && rest.length > 1) {
+        let cut = rest.length - 1;
+        while (cut > 1 && measure(rest.slice(0, cut), font, size) > width)
+          cut -= 1;
+        lines.push(rest.slice(0, cut));
+        rest = rest.slice(cut);
+      }
+      line = rest;
+    });
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
+}
+
+/** Wraps to at most maxLines, shortening the last line if needed. */
+function wrapLines(
+  value: string,
+  font: PDFFont,
+  size: number,
+  width: number,
+  maxLines: number,
+) {
+  const lines = wrapText(value, font, size, width).filter(Boolean);
+  return lines.length > maxLines
+    ? [...lines.slice(0, maxLines - 1), lines.slice(maxLines - 1).join(' ')]
+    : lines;
+}
+
+const characterSets = new WeakMap<PDFFont, Set<number>>();
+
+/** Keeps the characters the font can draw, folding the rest to plain text. */
+function printable(value: string, font: PDFFont) {
+  let supported = characterSets.get(font);
+  if (!supported) {
+    supported = new Set(font.getCharacterSet());
+    characterSets.set(font, supported);
+  }
+  let text = '';
+  for (const character of value.normalize('NFC').replace(/\s+/g, ' ')) {
+    if (supported.has(character.codePointAt(0)!)) {
+      text += character;
+      continue;
+    }
+    for (const fallback of character.normalize('NFKD').replace(/\p{M}/gu, ''))
+      if (supported.has(fallback.codePointAt(0)!)) text += fallback;
+  }
+  return text.trim();
+}
+
+async function embedFonts(document: PDFDocument): Promise<Fonts> {
+  document.registerFontkit(fontkit);
+  const bytes = await loadFontBytes();
+  const roles = Object.keys(FONT_FILES) as FontRole[];
+  const fonts = await Promise.all(
+    roles.map((role) =>
+      // Subset to the characters used; ligatures off so copied text matches.
+      document.embedFont(bytes[role], {
+        subset: true,
+        features: { liga: false },
+      }),
+    ),
+  );
+  return Object.fromEntries(
+    roles.map((role, index) => [role, fonts[index]]),
+  ) as Fonts;
+}
+
+let fontBytes: Promise<Record<FontRole, Uint8Array>> | undefined;
+
+function loadFontBytes() {
+  fontBytes ??= Promise.all(
+    (Object.entries(FONT_FILES) as Array<[FontRole, string]>).map(
+      async ([role, file]) => [role, await readFontFile(file)] as const,
+    ),
+  )
+    .then(
+      (entries) => Object.fromEntries(entries) as Record<FontRole, Uint8Array>,
+    )
+    .catch((error) => {
+      fontBytes = undefined;
+      throw error;
+    });
+  return fontBytes;
+}
+
+async function readFontFile(file: string) {
+  let lastError: unknown;
+  for (const directory of FONT_DIRECTORIES) {
+    try {
+      return new Uint8Array(await readFile(path.join(directory, file)));
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+/* Results ----------------------------------------------------------------- */
 
 function rankCars(
   cars: ResultCar[],
@@ -1313,20 +2718,14 @@ function resultStatusOrder(status = '') {
   return status === 'DQ' ? 4 : status === 'DNS' ? 3 : status === 'DNF' ? 2 : 0;
 }
 
-function formatPenalty(seconds: number) {
-  return seconds > 0 ? `+${seconds.toFixed(3)}s` : '-';
+function started(car: ResultCar) {
+  return car.laps > 0 && car.resultAdjustment?.status !== 'DNS';
 }
 
-function penaltyDecision(adjustment: ResultAdjustment) {
-  return [
-    adjustment.penaltySeconds > 0
-      ? formatPenalty(adjustment.penaltySeconds)
-      : '',
-    adjustment.status,
-    adjustment.positionOverride ? `P${adjustment.positionOverride}` : '',
-  ]
-    .filter(Boolean)
-    .join(' | ');
+function classified(car: ResultCar) {
+  return (
+    started(car) && !['DNF', 'DQ'].includes(car.resultAdjustment?.status || '')
+  );
 }
 
 function defaultAdjustmentNote(adjustment: ResultAdjustment) {
@@ -1342,6 +2741,22 @@ function millisecondsToLapTime(value: number) {
   const seconds = totalSeconds - minutes * 60;
   return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
 }
+
+function lapMilliseconds(passing: LapPassing) {
+  return passing.lapTimeMs ?? lapTimeToMilliseconds(passing.lapTime);
+}
+
+function carKey(
+  car: Pick<ResultCar, 'registrationKey' | 'registrationNumber'>,
+) {
+  return car.registrationKey || car.registrationNumber;
+}
+
+function passingKey(passing: LapPassing) {
+  return passing.registrationKey || passing.registrationNumber;
+}
+
+/* Parsing ----------------------------------------------------------------- */
 
 function parseSnapshot(
   value: string,
@@ -1362,6 +2777,11 @@ function parseSnapshot(
       raceTime: stringValue(snapshot.raceTime),
       initializedAt: stringValue(snapshot.initializedAt),
       updatedAt: stringValue(snapshot.updatedAt),
+      groups: Array.isArray(snapshot.groups)
+        ? snapshot.groups.filter(
+            (group): group is string => typeof group === 'string',
+          )
+        : [],
       cars: snapshot.cars
         .map((car) => parseCar(car, racePositions))
         .filter((car): car is ResultCar => Boolean(car)),
@@ -1382,6 +2802,7 @@ function parseCar(
     registrationNumber: stringValue(car.registrationNumber),
     number: stringValue(car.number),
     driver: stringValue(car.driver),
+    car: stringValue(car.car),
     groupName: stringValue(car.groupName),
     className: stringValue(car.className),
     position: numberValue(car.position),
@@ -1434,27 +2855,69 @@ async function loadLogo(requestUrl: string) {
   }
 }
 
-function sessionDescription(snapshot: ResultSnapshot) {
-  const type = snapshot.sessionMode === 'race' ? 'Race' : 'Practice';
-  const duration = snapshot.raceTime
-    ? ` - ${shortTime(snapshot.raceTime)} elapsed`
-    : snapshot.timeToGo
-      ? ` - ${shortTime(snapshot.timeToGo)} scheduled`
-      : '';
-  return safeText(`${type}${duration} - ${snapshot.flag || 'Timing recorded'}`);
+/* Formatting -------------------------------------------------------------- */
+
+/** "Group SE · Race 1", adding the run groups when the run name has none. */
+function sessionTitle(snapshot: ResultSnapshot) {
+  const title = displaySessionName(snapshot.runName).trim() || 'Session';
+  if (title.includes(' · ') || /^Groups?\s/i.test(title)) return title;
+  const groups = groupList(snapshot.groups);
+  return groups ? `${groups} · ${title}` : title;
 }
 
-function trackLine(snapshot: ResultSnapshot) {
-  return [snapshot.trackName, formatTrackDistance(snapshot.trackLength)]
-    .filter(Boolean)
-    .join(' - ');
+function groupList(groups: string[]) {
+  const names = [
+    ...new Set(groups.map((group) => group.trim()).filter(Boolean)),
+  ];
+  if (!names.length) return '';
+  const numbered = names.every((group) => /^Group\s+\d+$/i.test(group));
+  const labels = numbered
+    ? names
+        .map((group) => group.replace(/^Group\s+/i, ''))
+        .sort((left, right) => Number(left) - Number(right))
+    : names;
+  const joined =
+    labels.length === 1
+      ? labels[0]
+      : `${labels.slice(0, -1).join(', ')} & ${labels.at(-1)}`;
+  return numbered
+    ? `${labels.length === 1 ? 'Group' : 'Groups'} ${joined}`
+    : joined;
 }
-function formatTrackDistance(value: string) {
+
+function flagStatus(value: string) {
+  const flag = value.trim().toUpperCase();
+  if (!flag || flag === 'NOT ACTIVE')
+    return { label: 'Not active', tone: 'inactive' };
+  if (FINISH_FLAGS.includes(flag))
+    return { label: 'Checkered flag', tone: 'checkered' };
+  return {
+    label: `${flag.charAt(0)}${flag.slice(1).toLowerCase()} flag`,
+    tone: flag.toLowerCase(),
+  };
+}
+
+function trackDistance(value: string) {
   const distance = value.split(/[·/]/)[0]?.trim();
   if (!distance) return '';
-  return /^\d+(?:\.\d+)?$/.test(distance)
-    ? `${distance} miles`
-    : distance.replace(/\bmi\b/i, 'miles');
+  const miles = distance.match(/^(\d+(?:\.\d+)?)\s*(?:mi|miles?)?$/i)?.[1];
+  return miles
+    ? `${Number(miles).toLocaleString('en-US', { maximumFractionDigits: 3 })} mi`
+    : distance;
+}
+
+function ordinal(place: number) {
+  return place === 1
+    ? '1st'
+    : place === 2
+      ? '2nd'
+      : place === 3
+        ? '3rd'
+        : `${place}th`;
+}
+
+function sectionNumber(value: number) {
+  return String(value).padStart(2, '0');
 }
 
 function formatSessionName(value: string) {
@@ -1496,41 +2959,41 @@ function wheelSessionName(value: string) {
       : '';
 }
 
-function formatDate(value: string) {
+function trackDateParts(value: string) {
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
-  const day = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(date);
-  const time = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
-  return `${day} - ${time}`;
+  if (!Number.isFinite(date.getTime())) return null;
+  const format = (options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: TRACK_TIME_ZONE,
+      ...options,
+    }).format(date);
+  return {
+    weekday: format({ weekday: 'long' }),
+    day: format({ day: 'numeric' }),
+    date: format({ month: 'short', day: 'numeric', year: 'numeric' }),
+    time: format({ hour: 'numeric', minute: '2-digit' }),
+  };
 }
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Chicago',
-        month: 'numeric',
+    ? `${new Intl.DateTimeFormat('en-US', {
+        timeZone: TRACK_TIME_ZONE,
+        month: 'short',
         day: 'numeric',
         year: 'numeric',
         hour: 'numeric',
         minute: '2-digit',
         second: '2-digit',
-      }).format(date)
-    : 'from saved timing data';
+      }).format(date)} CT`
+    : 'the saved session';
 }
 function formatTimeOfDay(value: string) {
   const date = new Date(value);
   return Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Chicago',
+        timeZone: TRACK_TIME_ZONE,
         hour: 'numeric',
         minute: '2-digit',
         second: '2-digit',
@@ -1568,12 +3031,6 @@ function slugify(value: string) {
     .replace(/^-|-$/g, '')
     .slice(0, 80);
 }
-function chunk<T>(values: T[], size: number) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += size)
-    chunks.push(values.slice(index, index + size));
-  return chunks;
-}
 function shortTime(value: string) {
   return value.replace(/^00:/, '');
 }
@@ -1593,7 +3050,7 @@ function pointsValue(value: unknown) {
   return Number.isFinite(points) ? points : null;
 }
 function formatPoints(value: number | null) {
-  return value === null ? '-' : String(value);
+  return value === null ? '' : String(value);
 }
 function safeId(value: string) {
   return /^[a-z0-9][a-z0-9-]{0,119}$/i.test(value);
