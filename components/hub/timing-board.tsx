@@ -977,59 +977,63 @@ function TimingStandby({
           </div>
         </div>
       </section>
-      <div className="wrap">
-        <section className="preview" aria-labelledby="preview-title">
-          <div className="preview-head">
-            <Kicker>Board preview</Kicker>
-            <h2 id="preview-title" className="display-s">
-              Every car, every lap
-            </h2>
-            <p>
-              Position, laps, last and best lap, and the gap fill in as each car
-              crosses start / finish. Completed sessions become PDF result
-              sheets.
-            </p>
-          </div>
-          <div className="preview-board" aria-hidden="true">
-            <div className="preview-row preview-row-head">
-              <span>Pos</span>
-              <span>No.</span>
-              <span>Driver</span>
-              <span>Class</span>
-              <span>Laps</span>
-              <span>Last lap</span>
-              <span>Best lap</span>
-              <span>Gap</span>
+      {/* The preview explains the board to first-time visitors; after a
+          full day of racing it is just an empty table. */}
+      {!finished && (
+        <div className="wrap">
+          <section className="preview" aria-labelledby="preview-title">
+            <div className="preview-head">
+              <Kicker>Board preview</Kicker>
+              <h2 id="preview-title" className="display-s">
+                Every car, every lap
+              </h2>
+              <p>
+                Position, laps, last and best lap, and the gap fill in as each
+                car crosses start / finish. Completed sessions become PDF result
+                sheets.
+              </p>
             </div>
-            {Array.from({ length: PREVIEW_ROWS }, (_, index) => (
-              <div
-                key={index}
-                className="preview-row"
-                style={{ '--i': index } as React.CSSProperties}
-              >
-                <span>
-                  <PositionBadge position={index + 1} />
-                </span>
-                <span>
-                  <span className="preview-roundel" />
-                </span>
-                <span>
-                  <span className="preview-bar" />
-                </span>
-                <span>
-                  <span className="preview-tag" />
-                </span>
-                <span className="unlit">0</span>
-                <span className="unlit">0:00.000</span>
-                <span className="unlit">0:00.000</span>
-                <span className={index ? 'unlit' : undefined}>
-                  {index ? '+0.000' : 'Leader'}
-                </span>
+            <div className="preview-board" aria-hidden="true">
+              <div className="preview-row preview-row-head">
+                <span>Pos</span>
+                <span>No.</span>
+                <span>Driver</span>
+                <span>Class</span>
+                <span>Laps</span>
+                <span>Last lap</span>
+                <span>Best lap</span>
+                <span>Gap</span>
               </div>
-            ))}
-          </div>
-        </section>
-      </div>
+              {Array.from({ length: PREVIEW_ROWS }, (_, index) => (
+                <div
+                  key={index}
+                  className="preview-row"
+                  style={{ '--i': index } as React.CSSProperties}
+                >
+                  <span>
+                    <PositionBadge position={index + 1} />
+                  </span>
+                  <span>
+                    <span className="preview-roundel" />
+                  </span>
+                  <span>
+                    <span className="preview-bar" />
+                  </span>
+                  <span>
+                    <span className="preview-tag" />
+                  </span>
+                  <span className="unlit">0</span>
+                  <span className="unlit">0:00.000</span>
+                  <span className="unlit">0:00.000</span>
+                  <span className={index ? 'unlit' : undefined}>
+                    {index ? '+0.000' : 'Leader'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
