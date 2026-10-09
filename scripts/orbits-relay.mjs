@@ -10,6 +10,8 @@ const ingestUrl = process.env.CVAR_INGEST_URL;
 const ingestKey = process.env.CVAR_INGEST_KEY;
 const eventId = process.env.CVAR_EVENT_ID || 'mike-stephens-classic-2026';
 const minimumPublishInterval = Math.max(1_000, Number(process.env.CVAR_PUBLISH_INTERVAL_MS || 10_000));
+// A stalled request on slow track Wi-Fi would otherwise hold every later publish for minutes.
+const publishTimeout = Math.max(2_000, Number(process.env.CVAR_PUBLISH_TIMEOUT_MS || 10_000));
 const rawArchiveDirectory = process.env.CVAR_RAW_ARCHIVE_DIR || 'recordings';
 const rawArchive = process.env.CVAR_RECORD_RAW === '0' ? null : openRawArchive();
 const state = createTimingState({
@@ -105,6 +107,7 @@ async function publish() {
     const rawRecords = pendingRawRecords.slice();
     const response = await fetch(ingestUrl, {
       method: 'POST',
+      signal: AbortSignal.timeout(publishTimeout),
       headers: { authorization: `Bearer ${ingestKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         eventId,
@@ -138,7 +141,11 @@ async function publish() {
 async function checkCloud() {
   const url = new URL(ingestUrl);
   url.searchParams.set('check', '1');
-  const response = await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${ingestKey}` } });
+  const response = await fetch(url, {
+    method: 'POST',
+    signal: AbortSignal.timeout(publishTimeout),
+    headers: { authorization: `Bearer ${ingestKey}` },
+  });
   if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
   console.log('Vercel ingest and Redis are ready.');
 }

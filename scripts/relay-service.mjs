@@ -72,7 +72,7 @@ function install() {
   <key>ThrottleInterval</key>
   <integer>5</integer>
   <key>ProcessType</key>
-  <string>Background</string>
+  <string>Interactive</string>
   <key>StandardOutPath</key>
   <string>${xml(standardOutputPath)}</string>
   <key>StandardErrorPath</key>
@@ -84,8 +84,13 @@ function install() {
   writeFileSync(plistPath, plist, { mode: 0o600 });
   chmodSync(plistPath, 0o600);
   launchctl(['bootout', serviceTarget], false);
-  checkedLaunchctl(['bootstrap', domainTarget, plistPath]);
+  // A disabled service cannot be bootstrapped, and bootout finishes
+  // asynchronously, so enable first and retry bootstrap briefly.
   checkedLaunchctl(['enable', serviceTarget]);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (launchctl(['bootstrap', domainTarget, plistPath], false).status === 0) break;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+  }
   checkedLaunchctl(['kickstart', '-k', serviceTarget]);
   console.log(`CVAR Orbits relay service installed and started: ${serviceTarget}`);
   console.log(`Log: ${standardOutputPath}`);
