@@ -248,3 +248,31 @@ test('keeps driver names when Orbits resets for a new session', () => {
     ],
   );
 });
+
+test('drops a position change when Orbits takes back a double-read lap', () => {
+  const state = createTimingState({
+    sessionMode: 'race',
+    streamId: 'double-read',
+  });
+  const change = () =>
+    state.snapshot().cars.find((car) => car.registrationNumber === '69')
+      .positionChange;
+  [
+    '$G,1,"10",1,"00:01:40.000"',
+    '$G,14,"69",1,"00:01:46.262"',
+    '$G,1,"10",2,"00:03:20.000"',
+    '$G,18,"69",2,"00:04:09.768"',
+    // A second crossing 0.020 s later briefly counts as a lap in P1.
+    '$G,1,"69",3,"00:04:09.788"',
+    '$G,2,"10",2,"00:03:20.000"',
+    // Orbits corrects it back to lap 2.
+    '$G,1,"10",2,"00:03:20.000"',
+    '$G,18,"69",2,"00:04:09.788"',
+  ].forEach((line) => state.apply(line));
+  assert.equal(change(), -4);
+
+  ['$G,1,"10",3,"00:05:00.000"', '$G,17,"69",3,"00:06:05.321"'].forEach(
+    (line) => state.apply(line),
+  );
+  assert.equal(change(), 1);
+});

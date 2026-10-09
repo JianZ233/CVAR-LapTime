@@ -80,6 +80,7 @@ export function createTimingState(options = {}) {
         racePosition: 0,
         racePositionLap: 0,
         lastCompletedLapPosition: 0,
+        lapPositions: new Map(),
         positionChange: 0,
         practicePosition: 0,
         bestLapNumber: 0,
@@ -250,13 +251,26 @@ export function createTimingState(options = {}) {
       const position = numberOrZero(fields[1]);
       const car = competitorForSeries(command, fields[2], position);
       const laps = numberOrZero(fields[3]);
-      if (position > 0 && laps > car.racePositionLap) {
+      if (position > 0 && laps < car.racePositionLap) {
+        // Orbits took back a lap it counted from a double read on the loop,
+        // so forget the positions recorded for the removed laps.
+        for (const lap of car.lapPositions.keys())
+          if (lap > laps) car.lapPositions.delete(lap);
+        const previous = car.lapPositions.get(laps - 1) || 0;
+        car.lastCompletedLapPosition = car.lapPositions.get(laps) || 0;
+        car.positionChange =
+          previous > 0 && car.lastCompletedLapPosition > 0
+            ? previous - car.lastCompletedLapPosition
+            : 0;
+        car.racePositionLap = laps;
+      } else if (position > 0 && laps > car.racePositionLap) {
         car.positionChange =
           car.racePositionLap > 0 && car.lastCompletedLapPosition > 0
             ? car.lastCompletedLapPosition - position
             : 0;
         car.lastCompletedLapPosition = position;
         car.racePositionLap = laps;
+        car.lapPositions.set(laps, position);
       }
       car.racePosition = position;
       car.laps = laps;
