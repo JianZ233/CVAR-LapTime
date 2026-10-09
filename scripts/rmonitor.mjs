@@ -165,6 +165,11 @@ export function createTimingState(options = {}) {
       competitors.clear();
       competitorKeysByRegistration.clear();
       seenPassingIds.clear();
+      // Series counts refer to the cleared competitors; keeping them would
+      // file the next session's $A names under a second, untimed entry.
+      seriesCommand = '';
+      seriesPosition = 0;
+      seriesOccurrences = new Map();
       runId = '';
       flag = 'NOT ACTIVE';
       lapsToGo = null;

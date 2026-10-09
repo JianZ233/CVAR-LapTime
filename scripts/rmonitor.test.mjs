@@ -221,3 +221,30 @@ test('tracks race position movement between completed laps', () => {
   );
   assert.deepEqual(changes, { R1: -2, R2: 1, R3: 1 });
 });
+
+test('keeps driver names when Orbits resets for a new session', () => {
+  const state = createTimingState({ streamId: 'test-stream' });
+  [
+    '$A,"4","4",1001,"Ada","Lane","",1',
+    '$A,"51","51",1002,"Bo","Reed","",1',
+    '$I,"08:54:18","09 Oct 26"',
+    '$B,28,"G1 - TT1"',
+    '$A,"4","4",1001,"Ada","Lane","",1',
+    '$COMP,"4","4",1,"Ada","Lane","",""',
+    '$A,"51","51",1002,"Bo","Reed","",1',
+    '$COMP,"51","51",1,"Bo","Reed","",""',
+    '$G,1,"51",2,"00:03:25.751"',
+    '$G,2,"4",2,"00:04:28.552"',
+    '$H,1,"4",2,"00:01:37.787"',
+    '$H,2,"51",2,"00:01:38.904"',
+  ].forEach((line) => state.apply(line));
+
+  assert.equal(state.registrations().length, 2);
+  assert.deepEqual(
+    state.snapshot().cars.map((car) => [car.number, car.driver]),
+    [
+      ['4', 'Ada Lane'],
+      ['51', 'Bo Reed'],
+    ],
+  );
+});
