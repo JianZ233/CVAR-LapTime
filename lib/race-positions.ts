@@ -82,7 +82,8 @@ export function snapshotUsesRacePositions(snapshot: unknown) {
   return (
     timing.sessionMode === 'race' ||
     (typeof timing.runName === 'string' &&
-      /\brace(?:\s*\d+)?\b/i.test(timing.runName))
+      (/\brace(?:\s*\d+)?\b/i.test(timing.runName) ||
+        /(?:^|[-_=\s])r\d+(?=$|[-_=\s])/i.test(timing.runName)))
   );
 }
 

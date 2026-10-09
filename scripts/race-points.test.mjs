@@ -78,4 +78,6 @@ test('recognizes race names and Orbits race codes', () => {
   assert.equal(raceNumberFromRunName('Group 6 - Race 3'), 3);
   assert.equal(raceNumberFromRunName('Gp6-R3'), 3);
   assert.equal(raceNumberFromRunName('Gp6-PQ=Practice / Qualifying'), null);
+  assert.equal(raceNumberFromRunName('G3 - R3'), 3);
+  assert.equal(raceNumberFromRunName('G3 - TT1'), null);
 });

@@ -2921,20 +2921,7 @@ function sectionNumber(value: number) {
 }
 
 function formatSessionName(value: string) {
-  const wheelSession = wheelSessionName(value);
-  if (wheelSession) return wheelSession;
-  const match = value.match(/^Gp([0-9,]+)-([^=]+)(?:=(.+))?$/i);
-  if (!match) return safeText(value);
-  const groups = match[1].split(',');
-  const groupLabel =
-    groups.length === 1
-      ? `Group ${groups[0]}`
-      : `Groups ${groups.slice(0, -1).join(', ')} & ${groups.at(-1)}`;
-  const sessionLabel = (match[3] || match[2])
-    .replace(/^TT(\d+)$/i, 'Test & Tune $1')
-    .replace(/^R(\d+)$/i, 'Race $1')
-    .replace(/^PQ$/i, 'Practice / Qualifying');
-  return `${groupLabel} - ${sessionLabel}`;
+  return safeText(displaySessionName(value).replace(' · ', ' - '));
 }
 
 function resultOrderForSession(
@@ -2945,18 +2932,6 @@ function resultOrderForSession(
     /\brace(?:\s*\d+)?\b/i.test(formatSessionName(runName))
     ? 'position'
     : 'best-lap';
-}
-
-function wheelSessionName(value: string) {
-  const explicitName = value.match(/=(Open|Closed)\s+Wheel\s*$/i)?.[1];
-  if (explicitName)
-    return `${explicitName[0].toUpperCase()}${explicitName.slice(1).toLowerCase()} Wheel`;
-  const code = value.match(/(?:^|[-_=])(OW|CW)(?:$|[-_=])/i)?.[1];
-  return code?.toUpperCase() === 'OW'
-    ? 'Open Wheel'
-    : code?.toUpperCase() === 'CW'
-      ? 'Closed Wheel'
-      : '';
 }
 
 function trackDateParts(value: string) {

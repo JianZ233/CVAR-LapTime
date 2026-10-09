@@ -394,15 +394,19 @@ export function formatSessionName(value: string) {
   const wheelSession = wheelSessionName(value);
   if (wheelSession) return wheelSession;
   // Group codes are usually numbers ("Gp2,7") but can be letters ("GpSE").
-  const match = value.match(/^Gp([0-9A-Z,]+)-([^=]+)(?:=(.+))?$/i);
+  // Hallett's Orbits setup writes them as "G3 - TT1" instead.
+  const match = value.match(
+    /^G(?:p\s*([0-9A-Z]+(?:\s*[,&]\s*[0-9A-Z]+)*)|\s*((?:\d+|SE)(?:\s*[,&]\s*(?:\d+|SE))*))\s*-\s*([^=]+?)\s*(?:=\s*(.+?))?\s*$/i,
+  );
   if (!match) return value;
-  const groups = match[1].split(',');
+  const groups = (match[1] || match[2]).split(/\s*[,&]\s*/);
   const groupLabel =
     groups.length === 1
       ? `Group ${groups[0]}`
       : `Groups ${groups.slice(0, -1).join(', ')} & ${groups.at(-1)}`;
-  const sessionLabel = (match[3] || match[2])
-    .replace(/^TT(\d+)$/i, 'Test & Tune $1')
+  const sessionLabel = (match[4] || match[3])
+    .replace(/^TT\s*(\d+)$/i, 'Test & Tune $1')
+    .replace(/^TT$/i, 'Test & Tune')
     .replace(/^R(\d+)$/i, 'Race $1')
     .replace(/^PQ$/i, 'Practice / Qualifying');
   return `${groupLabel} · ${sessionLabel}`;

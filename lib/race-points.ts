@@ -43,7 +43,7 @@ export function applyCvarRacePoints<T extends RacePointCar>(
 
 export function raceNumberFromRunName(runName: string) {
   const raceName = runName.match(/\brace\s*(\d+)\b/i)?.[1];
-  const raceCode = runName.match(/(?:^|[-_=])r(\d+)(?=$|[-_=])/i)?.[1];
+  const raceCode = runName.match(/(?:^|[-_=\s])r(\d+)(?=$|[-_=\s])/i)?.[1];
   const value = Number(raceName || raceCode);
   return Number.isInteger(value) && value > 0 ? value : null;
 }

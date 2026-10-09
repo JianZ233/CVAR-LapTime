@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  formatSessionName,
   raceGapAtLastLap,
   rankSnapshotForSession,
   resultOrderForSession,
@@ -10,6 +11,7 @@ import {
   hydrateRacePositions,
   parseRacePositionHash,
   parseRacePositionsFromRawRecords,
+  snapshotUsesRacePositions,
 } from '../lib/race-positions.ts';
 
 function snapshot(runName, sessionMode = 'practice') {
@@ -228,4 +230,22 @@ test('race gaps use elapsed time at the last completed lap', () => {
     ),
     '+1 lap',
   );
+});
+
+test('expands Hallett Orbits session codes', () => {
+  assert.equal(formatSessionName('G3 - TT1'), 'Group 3 · Test & Tune 1');
+  assert.equal(formatSessionName('G2,7 - R2'), 'Groups 2 & 7 · Race 2');
+  assert.equal(formatSessionName('GSE - PQ'), 'Group SE · Practice / Qualifying');
+  assert.equal(
+    formatSessionName('GpSE-PQ=Practice & Qualify'),
+    'Group SE · Practice & Qualify',
+  );
+  assert.equal(formatSessionName('Grid walk - lunch'), 'Grid walk - lunch');
+});
+
+test('Hallett race codes use official POS order', () => {
+  assert.equal(resultOrderForSession('G3 - R1', 'practice'), 'position');
+  assert.equal(resultOrderForSession('G3 - TT1', 'practice'), 'best-lap');
+  assert.equal(snapshotUsesRacePositions({ runName: 'G3 - R1' }), true);
+  assert.equal(snapshotUsesRacePositions({ runName: 'G3 - TT1' }), false);
 });
