@@ -46,6 +46,7 @@ import {
   sessionBestLap,
   sessionClock,
   updatedAgoText,
+  type DayComplete,
   type TimingSessionSummary,
 } from '@/lib/timing-display';
 
@@ -232,6 +233,7 @@ export function TimingBoard({
     return (
       <TimingStandby
         now={now}
+        finished={timing.dayComplete}
         sessions={sessions}
         onSelectSession={selectSession}
         onNavigate={onNavigate}
@@ -828,11 +830,13 @@ const PREVIEW_ROWS = 6;
 
 function TimingStandby({
   now,
+  finished,
   sessions,
   onSelectSession,
   onNavigate,
 }: {
   now: number | null;
+  finished: DayComplete | null;
   sessions: TimingSessionSummary[];
   onSelectSession: (sessionId: string) => void;
   onNavigate: HubNavigate;
@@ -857,7 +861,18 @@ function TimingStandby({
             <Kicker tone="light">
               Live timing · {currentEvent.shortDates}
             </Kicker>
-            {phase === 'during' ? (
+            {finished?.next ? (
+              <>
+                <h1 id="standby-title" className="standby-title">
+                  {finished.day} <em className="serif">complete</em>
+                </h1>
+                <p className="standby-lede">
+                  Racing resumes {finished.next.day} at {finished.next.time}{' '}
+                  with {finished.next.title}. Every session from today is saved
+                  below and in Results.
+                </p>
+              </>
+            ) : phase === 'during' && !finished ? (
               <>
                 <h1 id="standby-title" className="standby-title">
                   Between <em className="serif">sessions</em>
@@ -867,7 +882,7 @@ function TimingStandby({
                   the green flag. No refresh needed.
                 </p>
               </>
-            ) : phase === 'after' ? (
+            ) : phase === 'after' || finished ? (
               <>
                 <h1 id="standby-title" className="standby-title">
                   Weekend <em className="serif">complete</em>
@@ -897,15 +912,29 @@ function TimingStandby({
             <dl className="standby-facts">
               <div>
                 <dt>Status</dt>
-                <dd>
-                  <span className="signal" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                  Waiting for the timing feed
-                </dd>
+                {finished ? (
+                  <dd>Track closed for the day</dd>
+                ) : (
+                  <dd>
+                    <span className="signal" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    Waiting for the timing feed
+                  </dd>
+                )}
               </div>
+              {finished?.next && (
+                <div>
+                  <dt>Next session</dt>
+                  <dd>
+                    {finished.next.day.slice(0, 3)},{' '}
+                    {finished.next.date.replace('October', 'Oct')} ·{' '}
+                    {finished.next.time}
+                  </dd>
+                </div>
+              )}
               {phase === 'before' && firstDay && firstOnTrack && (
                 <div>
                   <dt>First session</dt>

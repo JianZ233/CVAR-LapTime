@@ -387,18 +387,25 @@ function StatusPill({
   const days = now === null ? null : daysUntilEvent(now);
   // Name the moment rather than count days, so the pill never disagrees
   // with the hour-accurate countdown on Race HQ.
-  const [text, shortText] =
-    phase === null
-      ? [currentEvent.shortDates, currentEvent.shortDates]
-      : phase === 'before'
-        ? days === 0
-          ? ['Green flag today · 8:00 AM', 'Today']
-          : days === 1
-            ? ['Green flag tomorrow · 8:00 AM', 'Tomorrow']
-            : ['Green flag Fri, Oct 9 · 8:00 AM', 'Oct 9']
-        : phase === 'during'
-          ? ['Between sessions', 'Idle']
-          : ['Weekend complete', 'Complete'];
+  const finished = timing.dayComplete;
+  const [text, shortText] = finished?.next
+    ? [
+        `${finished.day} complete · ${finished.next.day.slice(0, 3)} ${finished.next.time}`,
+        'Day done',
+      ]
+    : finished
+      ? ['Weekend complete', 'Complete']
+      : phase === null
+        ? [currentEvent.shortDates, currentEvent.shortDates]
+        : phase === 'before'
+          ? days === 0
+            ? ['Green flag today · 8:00 AM', 'Today']
+            : days === 1
+              ? ['Green flag tomorrow · 8:00 AM', 'Tomorrow']
+              : ['Green flag Fri, Oct 9 · 8:00 AM', 'Oct 9']
+          : phase === 'during'
+            ? ['Between sessions', 'Idle']
+            : ['Weekend complete', 'Complete'];
 
   return (
     <span

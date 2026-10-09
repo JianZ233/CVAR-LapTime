@@ -30,6 +30,7 @@ import {
   isSessionBest,
   sessionBestLap,
   sessionClock,
+  type DayComplete,
 } from '@/lib/timing-display';
 
 const weekendSummaries = [
@@ -82,12 +83,16 @@ function tickerItems(timing: LiveTiming, now: number | null) {
     ];
   }
   const phase = now === null ? 'before' : eventPhase(now);
-  const lead =
-    phase === 'during'
-      ? 'Between sessions · standings appear automatically'
-      : phase === 'after'
-        ? 'Weekend complete · every result sheet is in Results'
-        : 'Green flag Friday, October 9 · 8:00 AM';
+  const finished = timing.dayComplete;
+  const lead = finished?.next
+    ? `${finished.day} complete · racing resumes ${finished.next.day} ${finished.next.time}`
+    : finished
+      ? 'Weekend complete · every result sheet is in Results'
+      : phase === 'during'
+        ? 'Between sessions · standings appear automatically'
+        : phase === 'after'
+          ? 'Weekend complete · every result sheet is in Results'
+          : 'Green flag Friday, October 9 · 8:00 AM';
   return [lead, ...weekendTicker];
 }
 
@@ -190,7 +195,11 @@ export function RaceHQ({
               ) : timing.feedState === 'history' ? (
                 <SavedSessionPanel timing={timing} onNavigate={onNavigate} />
               ) : (
-                <CountdownPanel now={now} onNavigate={onNavigate} />
+                <CountdownPanel
+                  now={now}
+                  finished={timing.dayComplete}
+                  onNavigate={onNavigate}
+                />
               )}
             </aside>
           </div>
@@ -464,14 +473,36 @@ export function RaceHQ({
 
 function CountdownPanel({
   now,
+  finished,
   onNavigate,
 }: {
   now: number | null;
+  finished: DayComplete | null;
   onNavigate: HubNavigate;
 }) {
   const phase = now === null ? 'before' : eventPhase(now);
 
-  if (phase === 'during')
+  if (finished?.next)
+    return (
+      <div className="console-body">
+        <p className="console-label">Checkered flag · {finished.day}</p>
+        <p className="console-title">{finished.day} complete</p>
+        <p className="console-text">
+          Racing resumes {finished.next.day} at {finished.next.time} with{' '}
+          {finished.next.title}.
+        </p>
+        <button
+          type="button"
+          className="button button-primary"
+          onClick={() => onNavigate('results')}
+        >
+          <Roll>Today’s results</Roll>
+          <ArrowRight aria-hidden="true" />
+        </button>
+      </div>
+    );
+
+  if (phase === 'during' && !finished)
     return (
       <div className="console-body">
         <p className="console-label">
@@ -493,7 +524,7 @@ function CountdownPanel({
       </div>
     );
 
-  if (phase === 'after')
+  if (phase === 'after' || finished)
     return (
       <div className="console-body">
         <p className="console-label">Checkered flag</p>

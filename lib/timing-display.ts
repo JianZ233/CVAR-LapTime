@@ -1,4 +1,5 @@
 import { currentEvent } from '@/lib/events';
+import { eventSchedule } from '@/lib/schedule';
 import {
   formatSessionName,
   lapTimeToMilliseconds,
@@ -286,4 +287,61 @@ export function daysUntilEvent(now: number) {
 export function eventDayIndex(now: number) {
   const offset = calendarDaysFromStart(now);
   return offset >= 0 && offset <= 2 ? offset : -1;
+}
+
+const ON_TRACK_FLAGS = ['GREEN', 'YELLOW', 'RED'];
+// Orbits keeps sending the last session after the final checkered flag, so a
+// connected feed alone does not mean cars are running. Afternoon gaps between
+// groups stay well under this, and lunch is before the cut-off hour.
+const DAY_COMPLETE_IDLE_MS = 20 * 60_000;
+const DAY_COMPLETE_HOUR = 15;
+const trackHourFormat = new Intl.DateTimeFormat('en-US', {
+  timeZone: TRACK_TIME_ZONE,
+  hour: 'numeric',
+  hourCycle: 'h23',
+});
+
+export type DayComplete = {
+  /** The race day that just finished, e.g. "Friday". */
+  day: string;
+  /** The next race day's first session, or null after the final day. */
+  next: { day: string; date: string; time: string; title: string } | null;
+};
+
+/** The track day is over once nothing has run for a while late in the day. */
+export function dayComplete(
+  snapshot: TimingSnapshot,
+  now: number,
+): DayComplete | null {
+  if (ON_TRACK_FLAGS.includes(snapshot.flag)) return null;
+  const idleSince = Date.parse(snapshot.flagStartedAt || snapshot.updatedAt);
+  if (!Number.isFinite(idleSince) || now - idleSince < DAY_COMPLETE_IDLE_MS)
+    return null;
+  const sameDay =
+    trackDayKeyFormat.format(new Date(now)) ===
+    trackDayKeyFormat.format(new Date(idleSince));
+  if (
+    sameDay &&
+    Number(trackHourFormat.format(new Date(now))) < DAY_COMPLETE_HOUR
+  )
+    return null;
+  const dayIndex = eventDayIndex(idleSince);
+  const finished = eventSchedule[dayIndex];
+  if (!finished) return null;
+  const nextDay = eventSchedule[dayIndex + 1];
+  const first = nextDay?.items.find(
+    (item) => item.kind === 'track' && item.time,
+  );
+  return {
+    day: finished.day,
+    next:
+      nextDay && first?.time
+        ? {
+            day: nextDay.day,
+            date: nextDay.date,
+            time: first.time,
+            title: first.title,
+          }
+        : null,
+  };
 }

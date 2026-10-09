@@ -9,7 +9,11 @@ import {
   rankSnapshotForSession,
   type TimingSnapshot,
 } from '@/lib/timing';
-import type { FeedState, TimingSessionSummary } from '@/lib/timing-display';
+import {
+  dayComplete,
+  type FeedState,
+  type TimingSessionSummary,
+} from '@/lib/timing-display';
 
 export function useLiveTiming() {
   const [snapshot, setSnapshot] = useState<TimingSnapshot>(demoSnapshot);
@@ -131,10 +135,20 @@ export function useLiveTiming() {
   const secondsAgo = Number.isFinite(timestamp)
     ? Math.max(0, Math.floor((clock - timestamp) / 1_000))
     : 0;
+  // After the day's last session the feed stays connected but nothing runs,
+  // so the hub shows its standby views instead of an idle live board.
+  const finishedDay =
+    clock > 0 && (feedState === 'live' || feedState === 'stale')
+      ? dayComplete(snapshot, clock)
+      : null;
   return {
     snapshot,
-    feedState:
-      feedState === 'live' && secondsAgo > 15 ? ('stale' as const) : feedState,
+    feedState: finishedDay
+      ? ('demo' as const)
+      : feedState === 'live' && secondsAgo > 15
+        ? ('stale' as const)
+        : feedState,
+    dayComplete: finishedDay,
     secondsAgo,
     sessions,
     archiveSessions,
