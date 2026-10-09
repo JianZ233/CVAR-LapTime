@@ -10,6 +10,7 @@ import {
   Flag,
   History as HistoryIcon,
   Radio,
+  Utensils,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -55,6 +56,31 @@ const VIEW_HASH: Record<HubView, string> = {
   schedule: '#schedule',
   results: '#results',
 };
+
+// Friday lunch, between the morning Test & Tune rounds and the afternoon.
+// It hides once an afternoon session runs, and in any case at 2 PM.
+const LUNCH_BREAK = {
+  startsAt: Date.parse('2026-10-09T11:00:00-05:00'),
+  endsAt: Date.parse('2026-10-09T14:00:00-05:00'),
+};
+
+function isMorningSession(runName: string) {
+  return /Test & Tune [12]$/.test(formatSessionName(runName));
+}
+
+function lunchBreakActive(timing: LiveTiming, now: number | null) {
+  if (now === null || now < LUNCH_BREAK.startsAt || now >= LUNCH_BREAK.endsAt)
+    return false;
+  const { feedState, snapshot, sessions } = timing;
+  const afternoonOnTrack =
+    feedState === 'live' &&
+    ['GREEN', 'YELLOW', 'RED'].includes(snapshot.flag) &&
+    !isMorningSession(snapshot.runName);
+  return (
+    !afternoonOnTrack &&
+    sessions.every((session) => isMorningSession(session.runName))
+  );
+}
 
 function viewFromHash(hash: string): HubView {
   const view = hash.replace(/^#/, '');
@@ -163,6 +189,24 @@ export default function Home() {
       </header>
 
       <main id="main" className="hub-main" data-view={view}>
+        {lunchBreakActive(timing, now) && (
+          <div className="break-banner" aria-live="polite">
+            <div className="wrap break-banner-inner">
+              <Utensils aria-hidden="true" />
+              <p>
+                <strong>Lunch break.</strong> Cars return to the track after
+                lunch, starting with the Lead Follow sessions.
+              </p>
+              <ViewLink
+                view="results"
+                navigate={navigate}
+                className="break-banner-link"
+              >
+                Morning results
+              </ViewLink>
+            </div>
+          </div>
+        )}
         {view === 'event' ? (
           <RaceHQ timing={timing} now={now} onNavigate={navigate} />
         ) : view === 'timing' ? (

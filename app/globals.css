@@ -1357,6 +1357,53 @@
     color: var(--warn);
   }
 
+  .break-banner {
+    border-bottom: 1px solid rgb(14 16 17 / 0.2);
+    background: var(--cvar-yellow);
+    color: #0e1011;
+  }
+
+  .break-banner-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-block: 12px;
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+
+  .break-banner-inner svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  .break-banner-inner p {
+    min-width: 0;
+  }
+
+  .break-banner-link {
+    margin-left: auto;
+    font-size: 0.74rem;
+    font-stretch: var(--semi-wide);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-decoration: underline;
+    text-transform: uppercase;
+    text-underline-offset: 4px;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 639px) {
+    .break-banner-inner {
+      flex-wrap: wrap;
+    }
+
+    .break-banner-link {
+      margin-left: 32px;
+    }
+  }
+
   .empty-state {
     display: grid;
     justify-items: center;

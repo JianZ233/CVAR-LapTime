@@ -235,6 +235,7 @@ test('race gaps use elapsed time at the last completed lap', () => {
 test('expands Hallett Orbits session codes', () => {
   assert.equal(formatSessionName('G3 - TT1'), 'Group 3 · Test & Tune 1');
   assert.equal(formatSessionName('G2,7 - R2'), 'Groups 2 & 7 · Race 2');
+  assert.equal(formatSessionName('G2/G7 - TT2'), 'Groups 2 & 7 · Test & Tune 2');
   assert.equal(formatSessionName('GSE - PQ'), 'Group SE · Practice / Qualifying');
   assert.equal(
     formatSessionName('GpSE-PQ=Practice & Qualify'),
