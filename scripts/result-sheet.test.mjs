@@ -255,3 +255,47 @@ test('an empty session still builds a sheet', async () => {
     'POSTED AT',
   ]);
 });
+
+test('laps are numbered from Orbits times, not the stored lap numbers', async () => {
+  const { snapshot, passings, adjustments } = samples['race-penalties']();
+  // What the relay used to store: the pit out and the start counted as
+  // laps 1 and 2, then a restart after lap 3 started the count over one lap
+  // short, so two sets of laps shared numbers 3 to 5. One car also tripped
+  // the loop twice, and Orbits sent one $J twice.
+  const stored = passings.flatMap((passing) => {
+    const lapNumber =
+      passing.lapNumber <= 3 ? passing.lapNumber + 2 : passing.lapNumber - 1;
+    const stored = [{ ...passing, lapNumber }];
+    if (passing.lapNumber === 1)
+      stored.unshift(
+        ...[1, 2].map((crossing) => ({
+          ...passing,
+          lapNumber: crossing,
+          lapTime: '',
+          lapTimeMs: null,
+          totalTimeMs: null,
+          recordedAt: new Date(
+            Date.parse(passing.recordedAt) - 600_000 + crossing * 1_000,
+          ).toISOString(),
+        })),
+      );
+    if (passing === passings[0])
+      stored.push(
+        {
+          ...passing,
+          lapNumber: lapNumber + 1,
+          lapTime: '0:00.020',
+          lapTimeMs: 20,
+          totalTimeMs: passing.totalTimeMs + 20,
+        },
+        { ...passing, lapNumber: lapNumber + 2 },
+      );
+    return stored;
+  });
+  const [reference, rebuilt] = await Promise.all(
+    [passings, stored].map(async (laps) =>
+      readSheet(await createResultSheet(snapshot, laps, logo, adjustments)),
+    ),
+  );
+  assert.equal(rebuilt.text, reference.text);
+});

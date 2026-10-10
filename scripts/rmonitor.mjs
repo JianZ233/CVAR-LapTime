@@ -1,3 +1,7 @@
+// A real lap takes well over this; a car tripping the loop twice comes
+// through as a lap of a few hundredths of a second.
+const MIN_LAP_MS = 10_000;
+
 export function parseCsvLine(line) {
   const fields = [];
   let value = '';
@@ -301,18 +305,30 @@ export function createTimingState(options = {}) {
       const car = ensureCompetitor(fields[1]);
       const lap = scoreTimeToMilliseconds(fields[2]);
       const total = scoreTimeToMilliseconds(fields[3]);
+      // Crossings without a lap time (pit out, the start) and loop double
+      // reads are not laps.
+      const timed = lap !== null && lap >= MIN_LAP_MS;
       car.lastLapMs = lap;
       car.totalTimeMs = total;
-      if (lap !== null && (car.bestLapMs === null || lap < car.bestLapMs))
+      if (timed && (car.bestLapMs === null || lap < car.bestLapMs))
         car.bestLapMs = lap;
-      car.passingCount = Math.max(car.passingCount + 1, car.laps);
-      car.laps = Math.max(car.laps, car.passingCount);
+      car.passingCount += 1;
       const duplicateCount =
         competitorKeysByRegistration.get(car.registrationNumber)?.length || 1;
       car.ambiguousRegistrationNumber = duplicateCount > 1;
-      const passingId = `${car.registrationKey}|${fields[3] || fields[2]}|${car.passingCount}`;
+      // Elapsed time identifies a timed crossing, so a $J that Orbits sends
+      // twice is stored once.
+      const passingId = timed
+        ? `${car.registrationKey}|${fields[3] || fields[2]}`
+        : `${car.registrationKey}|${fields[3] || fields[2]}|${car.passingCount}`;
       if (!seenPassingIds.has(passingId)) {
         seenPassingIds.add(passingId);
+        // Orbits sends $J just before the $G that counts the lap, so this is
+        // the lap after Orbits' count. Counting $J records instead took in
+        // the untimed crossings and started over one lap short whenever the
+        // relay restarted mid-session.
+        const lapNumber = timed ? car.laps + 1 : 0;
+        car.laps = Math.max(car.laps, lapNumber);
         pendingPassings.push({
           id: passingId,
           registrationKey: car.registrationKey,
@@ -328,7 +344,7 @@ export function createTimingState(options = {}) {
           className: classNameFor(car.classNumber),
           additionalInfo: car.additionalInfo,
           ambiguousRegistrationNumber: duplicateCount > 1,
-          lapNumber: car.passingCount,
+          lapNumber,
           lapTime: formatLapTime(lap),
           lapTimeMs: lap,
           totalTime: fields[3] || '',

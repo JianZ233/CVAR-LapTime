@@ -173,6 +173,9 @@ const STATUS_STAMP = {
 };
 const LAP_LINE = 20;
 const LAP_CELLS_X = 172;
+// A real lap takes well over this; a car tripping the loop twice comes
+// through as a lap of a few hundredths of a second.
+const MIN_LAP_MS = 10_000;
 
 export async function GET(request: Request) {
   if (!redisIsConfigured())
@@ -305,8 +308,10 @@ export async function createResultSheet(
   const selectedKeys = new Set(
     cars.map((car) => car.registrationKey || car.registrationNumber),
   );
-  const selectedPassings = passings.filter((passing) =>
-    selectedKeys.has(passing.registrationKey || passing.registrationNumber),
+  const selectedPassings = numberLaps(
+    passings.filter((passing) =>
+      selectedKeys.has(passing.registrationKey || passing.registrationNumber),
+    ),
   );
   const sheet: Sheet = {
     document,
@@ -2754,6 +2759,34 @@ function carKey(
 
 function passingKey(passing: LapPassing) {
   return passing.registrationKey || passing.registrationNumber;
+}
+
+/**
+ * Numbers each car's laps 1, 2, 3… in elapsed-time order. Stored lap numbers
+ * can't be trusted: the relay used to count every loop crossing, including
+ * pit out and the start, and started its count over one lap short when it
+ * was restarted mid-session. Crossings without a lap time, loop double reads
+ * and records Orbits sent twice are not laps.
+ */
+function numberLaps(passings: LapPassing[]) {
+  const lapsByCar = new Map<string, Map<number | string, LapPassing>>();
+  for (const passing of passings) {
+    const time = lapMilliseconds(passing);
+    if (!Number.isFinite(time) || time < MIN_LAP_MS) continue;
+    const key = passingKey(passing);
+    const laps = lapsByCar.get(key) || new Map<number | string, LapPassing>();
+    laps.set(passing.totalTimeMs ?? passing.recordedAt, passing);
+    lapsByCar.set(key, laps);
+  }
+  return [...lapsByCar.values()].flatMap((laps) =>
+    [...laps.values()]
+      .sort((left, right) =>
+        left.totalTimeMs !== null && right.totalTimeMs !== null
+          ? left.totalTimeMs - right.totalTimeMs
+          : Date.parse(left.recordedAt) - Date.parse(right.recordedAt),
+      )
+      .map((passing, index) => ({ ...passing, lapNumber: index + 1 })),
+  );
 }
 
 /* Parsing ----------------------------------------------------------------- */

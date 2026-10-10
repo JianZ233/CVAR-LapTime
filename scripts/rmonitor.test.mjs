@@ -59,7 +59,7 @@ test('builds practice standings from Orbits records', () => {
   const passings = state.drainPassings();
   assert.equal(passings.length, 2);
   assert.deepEqual(passings[0], {
-    id: 'R1|00:02:03.826|1',
+    id: 'R1|00:02:03.826',
     registrationKey: 'R1',
     registrationNumber: 'R1',
     transponderId: '123',
@@ -275,4 +275,61 @@ test('drops a position change when Orbits takes back a double-read lap', () => {
     (line) => state.apply(line),
   );
   assert.equal(change(), 1);
+});
+
+test('takes lap numbers from Orbits so a relay restart cannot shift them', () => {
+  const lapNumbers = (state) =>
+    state.drainPassings().map((passing) => passing.lapNumber);
+  // Records from Friday's Formula V Feature: Orbits sends $J just before
+  // the $G that counts the lap.
+  const before = createTimingState({ sessionMode: 'race', streamId: 'a' });
+  [
+    // Pit out and the start: crossings without a lap time.
+    '$J,"9","00:00:00.000","00:00:00.000"',
+    '$G,2,"9",,"00:00:00.000"',
+    '$J,"9","00:00:00.000","00:00:00.017"',
+    '$G,2,"9",,"00:00:00.017"',
+    '$J,"9","00:01:36.795","00:01:36.812"',
+    '$G,2,"9",1,"00:01:36.812"',
+    '$J,"9","00:01:33.169","00:03:09.981"',
+    '$G,2,"9",2,"00:03:09.981"',
+  ].forEach((line) => before.apply(line));
+  assert.deepEqual(lapNumbers(before), [0, 0, 1, 2]);
+
+  // The relay restarts; Orbits replays the standings on connect.
+  const after = createTimingState({ sessionMode: 'race', streamId: 'b' });
+  [
+    '$G,2,"9",5,"00:07:48.649"',
+    '$J,"9","00:01:33.902","00:09:22.551"',
+    '$G,2,"9",6,"00:09:22.551"',
+    '$J,"9","00:01:32.916","00:10:55.467"',
+    '$G,1,"9",7,"00:10:55.467"',
+  ].forEach((line) => after.apply(line));
+  assert.deepEqual(lapNumbers(after), [6, 7]);
+});
+
+test('a loop double read or a repeated $J is not a lap', () => {
+  const state = createTimingState({ sessionMode: 'race', streamId: 'c' });
+  [
+    '$G,1,"10",2,"00:03:20.000"',
+    '$G,18,"69",2,"00:04:09.768"',
+    // A second crossing 0.020 s later briefly counts as a lap in P1.
+    '$J,"69","00:00:00.020","00:04:09.788"',
+    '$G,1,"69",3,"00:04:09.788"',
+    '$G,2,"10",2,"00:03:20.000"',
+    // Orbits corrects it back to lap 2.
+    '$G,1,"10",2,"00:03:20.000"',
+    '$G,18,"69",2,"00:04:09.788"',
+    '$J,"69","00:01:55.533","00:06:05.321"',
+    '$J,"69","00:01:55.533","00:06:05.321"',
+    '$G,17,"69",3,"00:06:05.321"',
+  ].forEach((line) => state.apply(line));
+  assert.deepEqual(
+    state.drainPassings().map((passing) => passing.lapNumber),
+    [0, 3],
+  );
+  const car = state
+    .snapshot()
+    .cars.find((entry) => entry.registrationNumber === '69');
+  assert.equal(car.bestLap, '1:55.533');
 });
