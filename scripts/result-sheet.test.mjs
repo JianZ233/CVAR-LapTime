@@ -328,3 +328,37 @@ test('a lap that never reached storage leaves a gap, not a shifted count', () =>
     [1, 2, 3, 4, 6, 7],
   );
 });
+
+test('a race without steward statuses takes DNF and DNS from the timing', async () => {
+  const { snapshot, passings } = samples['race-penalties']();
+  const sheet = await readSheet(
+    await createResultSheet(snapshot, passings, null, {}),
+  );
+  const { items } = sheet.pages[0];
+  const onRow = (item, from, to) =>
+    items
+      .filter(
+        (other) =>
+          Math.abs(other.y - item.y) < 1.5 && other.x > from && other.x < to,
+      )
+      .map((other) => other.text);
+  const rows = items
+    .filter((item) => item.x < 60 && /^\d+$/.test(item.text))
+    .map((item) => [
+      onRow(item, 62, 92)[0],
+      onRow(item, 92, 300).find((text) => ['DNF', 'DNS'].includes(text)),
+      onRow(item, 548, 576)[0],
+    ])
+    .filter(([number]) => /^\d+$/.test(number || ''));
+  // #5 retired after lap 6 and #114 never started; everyone else took
+  // the flag.
+  assert.deepEqual(
+    rows.filter(([, status]) => status),
+    [
+      ['5', 'DNF', '1'],
+      ['114', 'DNS', '0'],
+    ],
+  );
+  assert.ok(rows.every(([, status, points]) => status || points !== '1'));
+  assertIncludes(sheet.pages[0].text, ['Did not finish', 'Did not start']);
+});

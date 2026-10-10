@@ -32,6 +32,8 @@ import {
   deduplicateDriverEntries,
   formatSessionName as displaySessionName,
   raceGapAtLastLap,
+  withRaceStatuses,
+  type RaceStatus,
 } from '../lib/timing.js';
 import { CURRENT_EVENT_ID } from '../lib/events.js';
 
@@ -55,6 +57,7 @@ type ResultCar = {
   gapToLeader?: string;
   adjustedBestLap?: string;
   resultAdjustment?: ResultAdjustment;
+  raceStatus?: RaceStatus;
 };
 
 type LapPassing = {
@@ -76,6 +79,7 @@ type ResultSnapshot = {
   runName: string;
   sessionMode: 'race' | 'practice';
   flag: string;
+  flagStartedAt: string;
   timeToGo: string;
   raceTime: string;
   initializedAt: string;
@@ -195,8 +199,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const sessionId =
-      requestedSessionId || (await redisCommand(['GET', 'cvar:live-session']));
+    const liveSessionId = await redisCommand(['GET', 'cvar:live-session']);
+    const sessionId = requestedSessionId || liveSessionId;
     if (typeof sessionId !== 'string' || !safeId(sessionId)) {
       return Response.json(
         { error: 'Result sheet data is not available' },
@@ -244,6 +248,7 @@ export async function GET(request: Request) {
       parsePassings(passingValues),
       await loadLogo(request.url),
       adjustments,
+      sessionId !== liveSessionId,
     );
     const filename = `${slugify(formatSessionName(snapshot.runName)) || 'cvar-session'}-results.pdf`;
     const body = pdf.buffer.slice(
@@ -272,6 +277,7 @@ export async function createResultSheet(
   passings: LapPassing[],
   logoBytes: Uint8Array | null,
   adjustments: Record<string, ResultAdjustment> = {},
+  sessionOver = true,
 ) {
   const document = await PDFDocument.create();
   const title = sessionTitle(snapshot);
@@ -303,7 +309,10 @@ export async function createResultSheet(
   );
   const cars =
     resultOrder === 'position'
-      ? applyCvarRacePoints(snapshot.runName, rankedCars)
+      ? applyCvarRacePoints(
+          snapshot.runName,
+          withRaceStatuses(rankedCars, snapshot, sessionOver),
+        )
       : rankedCars;
   const selectedKeys = new Set(
     cars.map((car) => car.registrationKey || car.registrationNumber),
@@ -527,8 +536,11 @@ function drawClassificationRow(
   });
 
   const driver = column('driver');
-  const tag = adjustmentTag(car.resultAdjustment);
-  const tagWidth = tag ? measureTag(fonts, tag.label) : 0;
+  const tags = resultTags(car);
+  const tagsWidth = tags.reduce(
+    (width, tag) => width + measureTag(fonts, tag.label) + 4,
+    0,
+  );
   const nameWidth = drawLabel(
     page,
     car.driver || `Car ${car.number || car.position}`,
@@ -537,14 +549,15 @@ function drawClassificationRow(
       y: baseline,
       size,
       font: fonts.textBold,
-      maxWidth: driver.width - 6 - (tag ? tagWidth + 4 : 0),
+      maxWidth: driver.width - 6 - tagsWidth,
       minSize: 6.6,
     },
   );
-  if (tag)
-    drawTag(page, fonts, tag.label, driver.x + 3 + nameWidth + 4, middle, {
-      filled: tag.filled,
-    });
+  let tagX = driver.x + 3 + nameWidth + 4;
+  tags.forEach((tag) => {
+    drawTag(page, fonts, tag.label, tagX, middle, { filled: tag.filled });
+    tagX += measureTag(fonts, tag.label) + 4;
+  });
 
   const carColumn = column('car');
   cellText(page, car.car, carColumn, baseline, {
@@ -683,10 +696,9 @@ function legendLines(sheet: Sheet) {
     );
   }
   const used = new Set(
-    cars.flatMap((car) => {
-      const tag = adjustmentTag(car.resultAdjustment);
-      return tag ? [tag.label.split(' ')[0]] : [];
-    }),
+    cars.flatMap((car) =>
+      resultTags(car).map((tag) => tag.label.split(' ')[0]),
+    ),
   );
   [
     ['PEN', 'Time penalty'],
@@ -2228,6 +2240,18 @@ function drawCarNumber(
   });
 }
 
+/** The steward's tag, then a DNF or DNS from the timing unless the steward
+ * set a status of their own. */
+function resultTags(car: ResultCar) {
+  const tags = [adjustmentTag(car.resultAdjustment)];
+  if (
+    car.raceStatus &&
+    !STOPPED_STATUSES.includes(car.resultAdjustment?.status || '')
+  )
+    tags.push({ label: car.raceStatus, filled: true });
+  return tags.filter((tag) => tag !== null);
+}
+
 function adjustmentTag(adjustment?: ResultAdjustment) {
   if (!adjustment) return null;
   const penalty =
@@ -2723,14 +2747,18 @@ function resultStatusOrder(status = '') {
   return status === 'DQ' ? 4 : status === 'DNS' ? 3 : status === 'DNF' ? 2 : 0;
 }
 
+/** A steward's DNF, DNS or DQ, otherwise the status the timing shows. */
+function resultStatus(car: ResultCar) {
+  const status = car.resultAdjustment?.status || '';
+  return STOPPED_STATUSES.includes(status) ? status : car.raceStatus || '';
+}
+
 function started(car: ResultCar) {
-  return car.laps > 0 && car.resultAdjustment?.status !== 'DNS';
+  return car.laps > 0 && resultStatus(car) !== 'DNS';
 }
 
 function classified(car: ResultCar) {
-  return (
-    started(car) && !['DNF', 'DQ'].includes(car.resultAdjustment?.status || '')
-  );
+  return started(car) && !['DNF', 'DQ'].includes(resultStatus(car));
 }
 
 function defaultAdjustmentNote(adjustment: ResultAdjustment) {
@@ -2828,6 +2856,7 @@ function parseSnapshot(
       runName: snapshot.runName,
       sessionMode: snapshot.sessionMode === 'race' ? 'race' : 'practice',
       flag: stringValue(snapshot.flag),
+      flagStartedAt: stringValue(snapshot.flagStartedAt),
       timeToGo: stringValue(snapshot.timeToGo),
       raceTime: stringValue(snapshot.raceTime),
       initializedAt: stringValue(snapshot.initializedAt),

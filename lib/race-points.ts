@@ -2,6 +2,7 @@ type RacePointCar = {
   className?: string;
   laps?: number;
   points?: number | null;
+  raceStatus?: string;
   resultAdjustment?: { status?: string };
 };
 
@@ -15,7 +16,11 @@ export function applyCvarRacePoints<T extends RacePointCar>(
   const classFinishers = new Map<string, number>();
 
   return cars.map((car) => {
-    const status = car.resultAdjustment?.status?.toUpperCase() || '';
+    const stewardStatus = car.resultAdjustment?.status?.toUpperCase() || '';
+    // A steward's DNF, DNS or DQ wins over the status the timing shows.
+    const status = ['DNF', 'DNS', 'DQ'].includes(stewardStatus)
+      ? stewardStatus
+      : car.raceStatus || stewardStatus;
     const started = finiteLaps(car.laps) > 0 && status !== 'DNS';
     const classified = started && !['DNF', 'DQ'].includes(status);
     const classKey = car.className?.trim().toUpperCase() || '';

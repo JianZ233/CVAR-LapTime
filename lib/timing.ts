@@ -21,6 +21,7 @@ export type TimingCar = {
   gap: string;
   points?: number | null;
   adjustedBestLap?: string;
+  raceStatus?: RaceStatus;
   resultAdjustment?: {
     penaltySeconds: number;
     positionOverride: number | null;
@@ -204,12 +205,18 @@ export function resultOrderForSession(
 
 export function rankSnapshotForSession(
   snapshot: TimingSnapshot,
+  sessionOver = false,
 ): TimingSnapshot {
   const resultOrder = resultOrderForSession(
     snapshot.runName,
     snapshot.sessionMode,
   );
-  const ranked = deduplicateDriverEntries(snapshot.cars).sort((left, right) => {
+  const entries = deduplicateDriverEntries(snapshot.cars);
+  const ranked = (
+    resultOrder === 'position'
+      ? withRaceStatuses(entries, snapshot, sessionOver)
+      : entries
+  ).sort((left, right) => {
     const leftStatus = resultStatusOrder(left.resultAdjustment?.status);
     const rightStatus = resultStatusOrder(right.resultAdjustment?.status);
     if (leftStatus !== rightStatus) return leftStatus - rightStatus;
@@ -380,6 +387,47 @@ export function raceGapAtLastLap(
 
 function safeLaps(value: number) {
   return Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+export type RaceStatus = 'DNF' | 'DNS';
+
+const FINISH_FLAGS = ['FINISH', 'FINISHED', 'CHECKERED', 'CHEQUERED'];
+// Cars still on their last lap when the checkered flag comes out need time
+// to come around and take it.
+const LAST_LAP_GRACE_MS = 3 * 60_000;
+
+/**
+ * Orbits keeps DNF and DNS on its Processing screen; the scoreboard feed
+ * doesn't carry them. Once a race has the checkered flag they follow from
+ * the standings: a car that never completed a lap did not start, and one
+ * whose last crossing came before the leader took the flag did not finish.
+ * A DNF is only called once Orbits has moved on to another session, or
+ * after the cars on their last lap have had time to come around.
+ */
+export function withRaceStatuses<T extends { laps: number; totalTime: string }>(
+  cars: T[],
+  session: { flag?: string; flagStartedAt?: string; updatedAt: string },
+  sessionOver = false,
+): Array<T & { raceStatus?: RaceStatus }> {
+  const mostLaps = Math.max(0, ...cars.map((car) => safeLaps(car.laps)));
+  const flag = (session.flag || '').trim().toUpperCase();
+  if (!FINISH_FLAGS.includes(flag) || !mostLaps) return cars;
+  const leaderFinished = Math.min(
+    ...cars
+      .filter((car) => safeLaps(car.laps) === mostLaps)
+      .map((car) => lapTimeToMilliseconds(car.totalTime)),
+  );
+  const sinceFlag =
+    Date.parse(session.updatedAt) - Date.parse(session.flagStartedAt || '');
+  const callFinishers =
+    Number.isFinite(leaderFinished) &&
+    (sessionOver || sinceFlag >= LAST_LAP_GRACE_MS);
+  return cars.map((car) => {
+    if (!safeLaps(car.laps)) return { ...car, raceStatus: 'DNS' };
+    if (callFinishers && lapTimeToMilliseconds(car.totalTime) < leaderFinished)
+      return { ...car, raceStatus: 'DNF' };
+    return car;
+  });
 }
 
 function formatElapsedGap(milliseconds: number) {

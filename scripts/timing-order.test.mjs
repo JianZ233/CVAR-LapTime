@@ -6,6 +6,7 @@ import {
   raceGapAtLastLap,
   rankSnapshotForSession,
   resultOrderForSession,
+  withRaceStatuses,
 } from '../lib/timing.ts';
 import {
   hydrateRacePositions,
@@ -235,8 +236,14 @@ test('race gaps use elapsed time at the last completed lap', () => {
 test('expands Hallett Orbits session codes', () => {
   assert.equal(formatSessionName('G3 - TT1'), 'Group 3 · Test & Tune 1');
   assert.equal(formatSessionName('G2,7 - R2'), 'Groups 2 & 7 · Race 2');
-  assert.equal(formatSessionName('G2/G7 - TT2'), 'Groups 2 & 7 · Test & Tune 2');
-  assert.equal(formatSessionName('GSE - PQ'), 'Group SE · Practice / Qualifying');
+  assert.equal(
+    formatSessionName('G2/G7 - TT2'),
+    'Groups 2 & 7 · Test & Tune 2',
+  );
+  assert.equal(
+    formatSessionName('GSE - PQ'),
+    'Group SE · Practice / Qualifying',
+  );
   assert.equal(
     formatSessionName('GpSE-PQ=Practice & Qualify'),
     'Group SE · Practice & Qualify',
@@ -249,4 +256,53 @@ test('Hallett race codes use official POS order', () => {
   assert.equal(resultOrderForSession('G3 - TT1', 'practice'), 'best-lap');
   assert.equal(snapshotUsesRacePositions({ runName: 'G3 - R1' }), true);
   assert.equal(snapshotUsesRacePositions({ runName: 'G3 - TT1' }), false);
+});
+
+test('DNF and DNS follow from the standings once the race is over', () => {
+  // Friday's Formula V Feature, from Orbits' standings.
+  const cars = [
+    { number: '9', laps: 13, totalTime: '20:17.011' },
+    { number: '56', laps: 12, totalTime: '20:32.928' },
+    { number: '007', laps: 12, totalTime: '19:49.741' },
+    { number: '73', laps: 7, totalTime: '13:02.375' },
+    { number: '14', laps: 0, totalTime: '' },
+  ];
+  const finish = {
+    flag: 'FINISH',
+    flagStartedAt: '2026-10-09T21:52:03.320Z',
+    updatedAt: '2026-10-09T21:54:18.510Z',
+  };
+  const statuses = (session, sessionOver) =>
+    withRaceStatuses(cars, session, sessionOver).map(
+      (car) => `${car.number}:${car.raceStatus || ''}`,
+    );
+
+  // #007 never crossed the line after the leader took the flag.
+  assert.deepEqual(statuses(finish, true), [
+    '9:',
+    '56:',
+    '007:DNF',
+    '73:DNF',
+    '14:DNS',
+  ]);
+  // While the race is still live, cars on their last lap get time to come
+  // around before they are called.
+  assert.deepEqual(statuses(finish, false), [
+    '9:',
+    '56:',
+    '007:',
+    '73:',
+    '14:DNS',
+  ]);
+  assert.deepEqual(
+    statuses({ ...finish, updatedAt: '2026-10-09T21:55:03.320Z' }, false),
+    statuses(finish, true),
+  );
+  assert.deepEqual(statuses({ ...finish, flag: 'GREEN' }, true), [
+    '9:',
+    '56:',
+    '007:',
+    '73:',
+    '14:',
+  ]);
 });

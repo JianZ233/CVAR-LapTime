@@ -101,7 +101,12 @@ export function useLiveTiming() {
         if (cancelled) return;
         hasReceivedData.current = true;
         if (selectedSessionId === 'live') hasReceivedLiveData.current = true;
-        setSnapshot(rankSnapshotForSession(body.snapshot));
+        setSnapshot(
+          rankSnapshotForSession(
+            body.snapshot,
+            selectedSessionId !== 'live' && selectedSessionId !== liveSessionId,
+          ),
+        );
         setFeedState(
           selectedSessionId === 'live'
             ? Date.now() - new Date(body.snapshot.updatedAt).getTime() > 15_000
@@ -129,7 +134,7 @@ export function useLiveTiming() {
       if (poller) window.clearInterval(poller);
       window.clearInterval(ticker);
     };
-  }, [selectedSessionId]);
+  }, [selectedSessionId, liveSessionId]);
 
   const timestamp = new Date(snapshot.updatedAt).getTime();
   const secondsAgo = Number.isFinite(timestamp)

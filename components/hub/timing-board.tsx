@@ -478,6 +478,7 @@ export function TimingBoard({
                         <span className="driver-name">
                           {car.driver || `Car ${car.number}`}
                           <AdjustmentBadge car={car} />
+                          <RaceStatusBadge car={car} />
                         </span>
                         {(car.car || car.resultAdjustment?.note) && (
                           <span className="driver-car">
@@ -574,6 +575,7 @@ export function TimingBoard({
                       </span>
                       <span className="sl-meta">
                         <AdjustmentBadge car={car} />
+                        <RaceStatusBadge car={car} />
                         {[
                           showGroup ? car.groupName : '',
                           car.className,
@@ -718,6 +720,20 @@ function BestLap({ car, bestMs }: { car: TimingCar; bestMs: number }) {
       {car.adjustedBestLap && (
         <span className="lap-raw">raw {car.bestLap}</span>
       )}
+    </span>
+  );
+}
+
+/** DNF or DNS from the timing, unless a steward set a status of their own. */
+function RaceStatusBadge({ car }: { car: TimingCar }) {
+  const stewardStatus = car.resultAdjustment?.status || '';
+  if (!car.raceStatus || ['DNF', 'DNS', 'DQ'].includes(stewardStatus))
+    return null;
+  const full = car.raceStatus === 'DNS' ? 'Did not start' : 'Did not finish';
+  return (
+    <span className="pen-badge" title={full}>
+      {car.raceStatus}
+      <span className="sr-only">, {full.toLowerCase()}</span>
     </span>
   );
 }
