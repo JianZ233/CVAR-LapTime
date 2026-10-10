@@ -3,6 +3,7 @@ import { eventSchedule } from '@/lib/schedule';
 import {
   formatSessionName,
   lapTimeToMilliseconds,
+  resultOrderForSession,
   type TimingCar,
   type TimingSnapshot,
 } from '@/lib/timing';
@@ -75,9 +76,26 @@ export function sessionClock(
       : { value: 'Done', label: 'Session finished' };
   if (snapshot.flag === 'NOT ACTIVE')
     return { value: '—', label: 'Session not active' };
+  // Orbits counts down the last lap of a timed race, and every lap of a
+  // race run to a lap count; 9999 means it isn't counting.
+  if (
+    snapshot.lapsToGo !== null &&
+    snapshot.lapsToGo > 0 &&
+    snapshot.lapsToGo < 9_999
+  )
+    return lapsToGoClock(snapshot.lapsToGo);
   if (snapshot.timeToGo) {
-    const shouldTick =
-      feedState === 'live' && ['GREEN', 'YELLOW'].includes(snapshot.flag);
+    const running = ['GREEN', 'YELLOW'].includes(snapshot.flag);
+    const shouldTick = feedState === 'live' && running;
+    // When a race's clock runs out the leader is on the last lap until the
+    // checkered flag, whether or not Orbits counts it.
+    if (
+      running &&
+      resultOrderForSession(snapshot.runName, snapshot.sessionMode) ===
+        'position' &&
+      secondsToGo(snapshot.timeToGo, shouldTick ? secondsAgo : 0) === 0
+    )
+      return lapsToGoClock(1);
     return {
       value: shouldTick
         ? countdownTime(snapshot.timeToGo, secondsAgo)
@@ -86,11 +104,15 @@ export function sessionClock(
     };
   }
   if (snapshot.lapsToGo !== null && snapshot.lapsToGo < 9_999)
-    return {
-      value: String(snapshot.lapsToGo),
-      label: snapshot.lapsToGo === 1 ? 'Lap to go' : 'Laps to go',
-    };
+    return lapsToGoClock(snapshot.lapsToGo);
   return { value: '—', label: 'Session active' };
+}
+
+function lapsToGoClock(lapsToGo: number) {
+  return {
+    value: String(lapsToGo),
+    label: lapsToGo === 1 ? 'Lap to go' : 'Laps to go',
+  };
 }
 
 export function flagElapsedSeconds(
@@ -117,16 +139,21 @@ export function formatElapsed(totalSeconds: number) {
     : `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-export function countdownTime(value: string, secondsElapsed: number) {
+function secondsToGo(value: string, secondsElapsed: number) {
   const match = value.match(/^(\d+):(\d{2}):(\d{2})(?:\.\d+)?$/);
-  if (!match) return shortTime(value);
-  const remaining = Math.max(
+  if (!match) return null;
+  return Math.max(
     0,
     Number(match[1]) * 3_600 +
       Number(match[2]) * 60 +
       Number(match[3]) -
       secondsElapsed,
   );
+}
+
+export function countdownTime(value: string, secondsElapsed: number) {
+  const remaining = secondsToGo(value, secondsElapsed);
+  if (remaining === null) return shortTime(value);
   const hours = Math.floor(remaining / 3_600);
   const minutes = Math.floor((remaining % 3_600) / 60);
   const seconds = remaining % 60;
