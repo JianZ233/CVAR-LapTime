@@ -333,3 +333,59 @@ test('a loop double read or a repeated $J is not a lap', () => {
     .cars.find((entry) => entry.registrationNumber === '69');
   assert.equal(car.bestLap, '1:55.533');
 });
+
+test('a car Orbits repeats to pad the end of a list is not a second car', () => {
+  const state = createTimingState({ sessionMode: 'practice', streamId: 'd' });
+  [
+    // Saturday's G4 P&Q: 12 cars defined, and Orbits lists #91 three times
+    // to fill a 14-row $H list. The two #75s really are two cars.
+    '$I,"08:11:28","10 Oct 26"',
+    '$A,"43","43",1445204,"Andrew","Holliday","4",4',
+    '$A,"75","75",,"Cole","Davis","4",1',
+    '$A,"75","75",822927,"Scott","Davis","4",1',
+    '$A,"91","91",598221,"Danny","Piott","4",5',
+    '$COMP,"91","91",5,"Danny","Piott","4",""',
+    '$H,1,"75",1,"00:01:50.253"',
+    '$H,2,"75",1,"00:01:52.000"',
+    '$H,3,"43",0,"00:00:00.000"',
+    '$H,4,"91",0,"00:00:00.000"',
+    '$H,5,"91",0,"00:00:00.000"',
+    '$H,6,"91",0,"00:00:00.000"',
+  ].forEach((line) => state.apply(line));
+
+  assert.deepEqual(
+    state
+      .snapshot()
+      .cars.map((car) => [
+        car.number,
+        car.driver,
+        car.position,
+        car.ambiguousRegistrationNumber,
+      ]),
+    [
+      ['75', 'Cole Davis', 1, true],
+      ['75a', 'Scott Davis', 2, true],
+      ['43', 'Andrew Holliday', 3, false],
+      ['91', 'Danny Piott', 4, false],
+    ],
+  );
+  assert.deepEqual(
+    state.registrations().map((registration) => registration.registrationKey),
+    ['43', '75', '75#2', '91'],
+  );
+});
+
+test('a padding row read before the car is defined disappears once it is', () => {
+  // On connect Orbits replays the standings before the $A records.
+  const state = createTimingState({ sessionMode: 'practice', streamId: 'e' });
+  [
+    '$H,1,"750",1,"00:01:49.507"',
+    '$H,2,"750",0,"00:00:00.000"',
+    '$B,41,"G4 - P&Q"',
+    '$A,"750","750",3840102,"David","Tieh","4",4',
+  ].forEach((line) => state.apply(line));
+  assert.deepEqual(
+    state.snapshot().cars.map((car) => [car.number, car.driver]),
+    [['750', 'David Tieh']],
+  );
+});

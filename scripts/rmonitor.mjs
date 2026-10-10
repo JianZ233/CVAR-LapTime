@@ -80,6 +80,7 @@ export function createTimingState(options = {}) {
         groupName: '',
         additionalInfo: '',
         classNumber: null,
+        defined: false,
         laps: 0,
         racePosition: 0,
         racePositionLap: 0,
@@ -128,11 +129,34 @@ export function createTimingState(options = {}) {
     return matched || competitorForSeries(command, registrationNumber);
   }
 
+  function carsWithNumber(registrationNumber) {
+    return (competitorKeysByRegistration.get(registrationNumber) || []).map(
+      (key) => competitors.get(key),
+    );
+  }
+
+  // Orbits pads the end of a $G or $H list by repeating its last car, and
+  // each extra row is filed as another car on that number. Two cars that
+  // really share a number each get an $A or $COMP record; a padding row
+  // never does.
+  function isPadding(car) {
+    return (
+      !car.defined &&
+      carsWithNumber(car.registrationNumber).some((other) => other.defined)
+    );
+  }
+
+  function sharesNumber(registrationNumber) {
+    return (
+      carsWithNumber(registrationNumber).filter((car) => !isPadding(car))
+        .length > 1
+    );
+  }
+
   function disambiguateDisplayNumbers(registrationNumber) {
     const used = new Set();
-    for (const key of competitorKeysByRegistration.get(registrationNumber) ||
-      []) {
-      const car = competitors.get(key);
+    for (const car of carsWithNumber(registrationNumber)) {
+      if (isPadding(car)) continue;
       const base = car.sourceNumber || registrationNumber;
       let displayNumber = base;
       let suffix = 0;
@@ -210,6 +234,7 @@ export function createTimingState(options = {}) {
 
     if (command === '$A') {
       const car = competitorForDefinition(command, fields);
+      car.defined = true;
       car.sourceNumber = fields[2] || car.sourceNumber;
       car.transponderId = fields[3] || car.transponderId;
       car.firstName = fields[4] || car.firstName;
@@ -227,6 +252,7 @@ export function createTimingState(options = {}) {
 
     if (command === '$COMP') {
       const car = competitorForDefinition(command, fields);
+      car.defined = true;
       car.sourceNumber = fields[2] || car.sourceNumber;
       car.classNumber = numberOrNull(fields[3]);
       car.firstName = fields[4] || car.firstName;
@@ -313,9 +339,8 @@ export function createTimingState(options = {}) {
       if (timed && (car.bestLapMs === null || lap < car.bestLapMs))
         car.bestLapMs = lap;
       car.passingCount += 1;
-      const duplicateCount =
-        competitorKeysByRegistration.get(car.registrationNumber)?.length || 1;
-      car.ambiguousRegistrationNumber = duplicateCount > 1;
+      const sharedNumber = sharesNumber(car.registrationNumber);
+      car.ambiguousRegistrationNumber = sharedNumber;
       // Elapsed time identifies a timed crossing, so a $J that Orbits sends
       // twice is stored once.
       const passingId = timed
@@ -343,7 +368,7 @@ export function createTimingState(options = {}) {
           classNumber: car.classNumber,
           className: classNameFor(car.classNumber),
           additionalInfo: car.additionalInfo,
-          ambiguousRegistrationNumber: duplicateCount > 1,
+          ambiguousRegistrationNumber: sharedNumber,
           lapNumber,
           lapTime: formatLapTime(lap),
           lapTimeMs: lap,
@@ -371,7 +396,9 @@ export function createTimingState(options = {}) {
       configuredMode === 'auto' ? inferredMode : configuredMode;
     const positionKey =
       sessionMode === 'race' ? 'racePosition' : 'practicePosition';
-    const ordered = deduplicateCompetitors([...competitors.values()])
+    const ordered = deduplicateCompetitors(
+      [...competitors.values()].filter((car) => !isPadding(car)),
+    )
       .filter(
         (car) =>
           car.racePosition || car.practicePosition || car.lastLapMs !== null,
@@ -432,9 +459,7 @@ export function createTimingState(options = {}) {
         bestLapNumber: car.bestLapNumber,
         latestLapNumber: car.latestLapNumber,
         latestScoreType: car.latestScoreType,
-        ambiguousRegistrationNumber:
-          (competitorKeysByRegistration.get(car.registrationNumber)?.length ||
-            1) > 1,
+        ambiguousRegistrationNumber: sharesNumber(car.registrationNumber),
         totalTime: formatLapTime(car.totalTimeMs),
         lastLap: formatLapTime(car.lastLapMs),
         bestLap: formatLapTime(car.bestLapMs),
@@ -452,25 +477,25 @@ export function createTimingState(options = {}) {
   }
 
   function registrations() {
-    return [...competitors.values()].map((car) => ({
-      registrationKey: car.registrationKey,
-      registrationNumber: car.registrationNumber,
-      transponderId: car.transponderId,
-      number: car.number,
-      sourceNumber: car.sourceNumber,
-      firstName: car.firstName,
-      lastName: car.lastName,
-      driver: car.driver,
-      car: car.car,
-      nationality: car.nationality,
-      groupName: car.groupName,
-      additionalInfo: car.additionalInfo,
-      classNumber: car.classNumber,
-      className: classNameFor(car.classNumber),
-      ambiguousRegistrationNumber:
-        (competitorKeysByRegistration.get(car.registrationNumber)?.length ||
-          1) > 1,
-    }));
+    return [...competitors.values()]
+      .filter((car) => !isPadding(car))
+      .map((car) => ({
+        registrationKey: car.registrationKey,
+        registrationNumber: car.registrationNumber,
+        transponderId: car.transponderId,
+        number: car.number,
+        sourceNumber: car.sourceNumber,
+        firstName: car.firstName,
+        lastName: car.lastName,
+        driver: car.driver,
+        car: car.car,
+        nationality: car.nationality,
+        groupName: car.groupName,
+        additionalInfo: car.additionalInfo,
+        classNumber: car.classNumber,
+        className: classNameFor(car.classNumber),
+        ambiguousRegistrationNumber: sharesNumber(car.registrationNumber),
+      }));
   }
 
   function classNameFor(classNumber) {
