@@ -399,8 +399,9 @@ const LAST_LAP_GRACE_MS = 3 * 60_000;
 /**
  * Orbits keeps DNF and DNS on its Processing screen; the scoreboard feed
  * doesn't carry them. Once a race has the checkered flag they follow from
- * the standings: a car that never completed a lap did not start, and one
- * whose last crossing came before the leader took the flag did not finish.
+ * the standings: a car that never crossed the line after the start did not
+ * start, and one whose last crossing came before the leader took the flag
+ * did not finish.
  * A DNF is only called once Orbits has moved on to another session, or
  * after the cars on their last lap have had time to come around.
  */
@@ -423,8 +424,12 @@ export function withRaceStatuses<T extends { laps: number; totalTime: string }>(
     Number.isFinite(leaderFinished) &&
     (sessionOver || sinceFlag >= LAST_LAP_GRACE_MS);
   return cars.map((car) => {
-    if (!safeLaps(car.laps)) return { ...car, raceStatus: 'DNS' };
-    if (callFinishers && lapTimeToMilliseconds(car.totalTime) < leaderFinished)
+    const elapsed = lapTimeToMilliseconds(car.totalTime);
+    // Crossing the line once the race is running is taking the start, even
+    // for a car that stops before it completes a lap.
+    const tookStart = Number.isFinite(elapsed) && elapsed > 0;
+    if (!safeLaps(car.laps) && !tookStart) return { ...car, raceStatus: 'DNS' };
+    if (callFinishers && elapsed < leaderFinished)
       return { ...car, raceStatus: 'DNF' };
     return car;
   });

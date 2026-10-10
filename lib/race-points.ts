@@ -21,7 +21,9 @@ export function applyCvarRacePoints<T extends RacePointCar>(
     const status = ['DNF', 'DNS', 'DQ'].includes(stewardStatus)
       ? stewardStatus
       : car.raceStatus || stewardStatus;
-    const started = finiteLaps(car.laps) > 0 && status !== 'DNS';
+    // A DNF took the start even if it stopped before completing a lap.
+    const started =
+      status !== 'DNS' && (finiteLaps(car.laps) > 0 || status === 'DNF');
     const classified = started && !['DNF', 'DQ'].includes(status);
     const classKey = car.className?.trim().toUpperCase() || '';
     let classPosition = 0;

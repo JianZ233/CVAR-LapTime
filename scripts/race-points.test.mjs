@@ -30,6 +30,18 @@ test('calculates per-race start and finish points', () => {
   );
 });
 
+test('a DNF that stopped before completing a lap still started', () => {
+  const cars = applyCvarRacePoints('G4 - Race 1', [
+    { className: 'VB', laps: 13, points: null },
+    { className: 'G4T(T1)', laps: 0, points: null, raceStatus: 'DNF' },
+    { className: 'GT4', laps: 0, points: null, raceStatus: 'DNS' },
+  ]);
+  assert.deepEqual(
+    cars.map((car) => car.points),
+    [2, 1, 0],
+  );
+});
+
 test('adds feature-race points by class finishing position', () => {
   const cars = applyCvarRacePoints(
     'Gp6-R3=Race 3',

@@ -2754,7 +2754,9 @@ function resultStatus(car: ResultCar) {
 }
 
 function started(car: ResultCar) {
-  return car.laps > 0 && resultStatus(car) !== 'DNS';
+  // A DNF took the start even if it stopped before completing a lap.
+  const status = resultStatus(car);
+  return status !== 'DNS' && (car.laps > 0 || status === 'DNF');
 }
 
 function classified(car: ResultCar) {

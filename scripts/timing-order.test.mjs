@@ -306,3 +306,25 @@ test('DNF and DNS follow from the standings once the race is over', () => {
     '14:',
   ]);
 });
+
+test('a car that took the start but never completed a lap is a DNF', () => {
+  // Saturday's G4 Race 1: #91 crossed the line 4.977 s after the start and
+  // stopped; #7 never crossed it.
+  const cars = [
+    { number: '124', laps: 13, totalTime: '20:29.211' },
+    { number: '75*', laps: 7, totalTime: '12:11.717' },
+    { number: '91', laps: 0, totalTime: '0:04.977' },
+    { number: '7', laps: 0, totalTime: '' },
+  ];
+  const finish = {
+    flag: 'FINISH',
+    flagStartedAt: '2026-10-10T15:16:48.095Z',
+    updatedAt: '2026-10-10T15:17:40.380Z',
+  };
+  const statuses = (sessionOver) =>
+    withRaceStatuses(cars, finish, sessionOver).map(
+      (car) => `${car.number}:${car.raceStatus || ''}`,
+    );
+  assert.deepEqual(statuses(true), ['124:', '75*:DNF', '91:DNF', '7:DNS']);
+  assert.deepEqual(statuses(false), ['124:', '75*:', '91:', '7:DNS']);
+});
