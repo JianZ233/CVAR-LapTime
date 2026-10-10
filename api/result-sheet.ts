@@ -2768,7 +2768,7 @@ function passingKey(passing: LapPassing) {
  * was restarted mid-session. Crossings without a lap time, loop double reads
  * and records Orbits sent twice are not laps.
  */
-function numberLaps(passings: LapPassing[]) {
+export function numberLaps(passings: LapPassing[]) {
   const lapsByCar = new Map<string, Map<number | string, LapPassing>>();
   for (const passing of passings) {
     const time = lapMilliseconds(passing);
@@ -2778,15 +2778,37 @@ function numberLaps(passings: LapPassing[]) {
     laps.set(passing.totalTimeMs ?? passing.recordedAt, passing);
     lapsByCar.set(key, laps);
   }
-  return [...lapsByCar.values()].flatMap((laps) =>
-    [...laps.values()]
+  return [...lapsByCar.values()].flatMap((laps) => {
+    let lapNumber = 0;
+    let previous: LapPassing | undefined;
+    return [...laps.values()]
       .sort((left, right) =>
         left.totalTimeMs !== null && right.totalTimeMs !== null
           ? left.totalTimeMs - right.totalTimeMs
           : Date.parse(left.recordedAt) - Date.parse(right.recordedAt),
       )
-      .map((passing, index) => ({ ...passing, lapNumber: index + 1 })),
-  );
+      .map((passing) => {
+        lapNumber += 1 + missedCrossings(previous, passing);
+        previous = passing;
+        return { ...passing, lapNumber };
+      });
+  });
+}
+
+/**
+ * Laps lost between two stored crossings, as when the relay is stopped
+ * before it publishes the lap it just read. Orbits times each lap from the
+ * crossing before it, so a lap that starts well after the previous stored
+ * crossing means the ones in between were never stored.
+ */
+function missedCrossings(
+  previous: LapPassing | undefined,
+  passing: LapPassing,
+) {
+  if (previous?.totalTimeMs == null || passing.totalTimeMs === null) return 0;
+  const lap = lapMilliseconds(passing);
+  const gap = passing.totalTimeMs - lap - previous.totalTimeMs;
+  return gap < MIN_LAP_MS ? 0 : Math.max(1, Math.round(gap / lap));
 }
 
 /* Parsing ----------------------------------------------------------------- */

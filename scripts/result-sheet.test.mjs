@@ -12,7 +12,7 @@ import {
 
 import { loadResultSheet, readLogo, samples } from './result-sheet-samples.mjs';
 
-const { createResultSheet } = await loadResultSheet();
+const { createResultSheet, numberLaps } = await loadResultSheet();
 const logo = await readLogo();
 const UNMAPPED = String.fromCodePoint(0xfffd);
 
@@ -298,4 +298,33 @@ test('laps are numbered from Orbits times, not the stored lap numbers', async ()
     ),
   );
   assert.equal(rebuilt.text, reference.text);
+});
+
+test('a lap that never reached storage leaves a gap, not a shifted count', () => {
+  // #56 in Friday's Formula V Feature: the relay was restarted just after
+  // reading its lap 5, so that lap was never stored.
+  const lap = (lapTime, totalTime) => ({
+    registrationKey: '56',
+    registrationNumber: '56',
+    number: '56',
+    driver: 'Les Lester',
+    lapNumber: 0,
+    lapTime: '',
+    lapTimeMs: lapTime,
+    totalTimeMs: totalTime,
+    recordedAt: '2026-10-09T21:40:00.000Z',
+  });
+  const stored = [
+    lap(106_696, 106_713),
+    lap(104_213, 210_926),
+    lap(102_366, 313_292),
+    lap(100_689, 413_981),
+    // Lap 5 (1:41.505) is missing.
+    lap(102_504, 618_000),
+    lap(101_162, 719_162),
+  ];
+  assert.deepEqual(
+    numberLaps(stored).map((passing) => passing.lapNumber),
+    [1, 2, 3, 4, 6, 7],
+  );
 });
